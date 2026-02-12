@@ -8,7 +8,7 @@
 #include "common.h"
 #include "http_rest.h"
 
-#define EEPROM_MOTOR_DATA_REV                     5              // 16 byte 
+#define EEPROM_MOTOR_DATA_REV                     7
 
 
 // Terms
@@ -24,9 +24,9 @@ typedef enum {
 
 typedef enum {
     MOTOR_INIT_OK = 0,
-    MOTOR_INIT_CFG_ERR = 2,
-    MOTOR_INIT_COARSE_DRV_ERR = 3,
-    MOTOR_INIT_FINE_DRV_ERR = 4,
+    MOTOR_INIT_CFG_ERR = 1,
+    MOTOR_INIT_COARSE_DRV_ERR = 2,
+    MOTOR_INIT_FINE_DRV_ERR = 3,
 } motor_init_err_t;
 
 
@@ -76,7 +76,6 @@ typedef struct {
 } motor_config_t;
 
 
-
 // Interface functions
 #ifdef __cplusplus
 extern "C" {
@@ -85,7 +84,6 @@ extern "C" {
 motor_init_err_t motors_init(void);
 bool motor_config_init(void);
 bool motor_config_save(void);
-void motor_task(void *p);
 void motor_set_speed(motor_select_t selected_motor, float new_velocity);
 uint16_t get_motor_max_speed(motor_select_t selected_motor);
 float get_motor_min_speed(motor_select_t selected_motor);

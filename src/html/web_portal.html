@@ -1,22 +1,63 @@
 <!DOCTYPE html>
-<html>
+<html data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
     <title>OpenTrickler Web Controller</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.3/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="styles.css" rel="stylesheet" type="text/css" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0 viewport-fit=cover">
-    <link rel="icon" href="https://raw.githubusercontent.com/eamars/OpenTrickler/main/Resources/favicon.ico">
+    <link rel="icon" href="/favicon.ico">
 
     <style>
         /* Exclude the pixels taken by the bottom nav bar */
         .exclude-bottom-nav {
             padding-bottom: 64px;
         }
+        /* Fix drawer menu scrolling */
+        #drawerSlide {
+            max-height: calc(100vh - 64px) !important;
+            max-height: calc(100dvh - 64px) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            flex-wrap: nowrap !important;
+        }
+        #drawerSlide li {
+            width: 100% !important;
+        }
     </style>
+
+    <style>
+        /* Theme toggle button - inline in navbar */
+        .theme-toggle {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+    </style>
+    <script>
+        // Load saved theme or default to dark
+        (function() {
+            const saved = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', saved);
+        })();
+        
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            updateThemeIcon();
+        }
+        
+        function updateThemeIcon() {
+            const theme = document.documentElement.getAttribute('data-theme');
+            const btn = document.getElementById('themeToggleBtn');
+            if (btn) {
+                btn.innerHTML = theme === 'dark' ? 'Light' : 'Dark';
+            }
+        }
+    </script>
 </head>
 
 <body>
@@ -32,7 +73,6 @@
                 <div class="stat">
                     <div class="stat-title">Current Weight</div>
                     <div id="currentWeightDecimal" class="stat-value">---</div>
-                    <div id="profileName" class="stat-desc text-primary" onclick="onProfileNameClicked()">Unknown Profile</div>
                     <div class="stat-desc">
                         <progress id="currentWeightProgressPencentage" class="progress progress-primary" value="100" max="100"></progress>
                     </div>
@@ -49,6 +89,10 @@
 
             </div>
 
+            <div class="px-4 mt-1">
+                <select id="tricklerProfileSelect" class="select select-bordered select-primary select-sm w-full" onchange="onTricklerProfileChanged(this)"></select>
+            </div>
+
             <!-- Charge Mode Control -->
             <section id="sectionTricklerChargeMode">
                 <div class="grid grid-cols-1 gap-2 px-4">
@@ -62,6 +106,34 @@
                         <li id="chargeModeStateRemoveCup" class="step">Remove Cup</li>
                         <li id="chargeModeStateReturnCup" class="step">Return Cup</li>
                     </ul>
+
+                    <!-- AI Tuning Status Panel (hidden when not active) -->
+                    <div id="aiTuningMainPanel" class="bg-base-200 rounded-lg p-3 text-sm" style="display: none;">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="font-bold text-primary">AI Tuning Active</span>
+                            <span id="aiMainPhase" class="badge badge-primary">Phase 1</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                                <span class="text-gray-500">Drop:</span>
+                                <span id="aiMainDrop" class="font-mono">1/10</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">Testing:</span>
+                                <span id="aiMainTesting" class="font-mono">Kp=0.5 Kd=0.3</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">Last:</span>
+                                <span id="aiMainLast" class="font-mono">+0.02g 8.5s</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ML Suggestions Available Banner -->
+                    <div id="mlSuggestionsBanner" class="alert alert-info text-sm py-2" style="display: none;" onclick="onNavButtonClicked('settings'); onSettingsLinkClicked('settings-ai-tuning')">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span>ML suggestions available - tap to view</span>
+                    </div>
 
                     <!-- Row 3 -->
                     <input id="chargeWeightInput" type="number" step="0.001" placeholder="Charge Weight" class="input input-bordered input-primary" pattern="[0-9]+([\.,][0-9]+)?"/>
@@ -88,11 +160,14 @@
             <div class="grid grid-cols-1 gap-2 px-4">
                 <div class="divider">General Control</div>
                 <div class="grid grid-cols-1 gap-2">
-                    <button class="btn btn-neutral" onclick="scaleForceZero()">Scale Zero</button>
-
                     <div class="grid grid-cols-2 gap-2">
                         <button class="btn btn-neutral" onclick="servoGateSetState(2)">Gate Open</button>
                         <button class="btn btn-neutral" onclick="servoGateSetState(1)">Gate Close</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="btn btn-success" onclick="setPicoLed(true)">LED On</button>
+                        <button class="btn btn-neutral" onclick="setPicoLed(false)">LED Off</button>
                     </div>
                 </div>
             </div>
@@ -113,6 +188,11 @@
                         </label>
                     </div> 
                     <div id="settingsSectionTitle" class="w-full px-2 mx-2">---</div>
+                    <div class="flex items-center gap-2">
+                        <div id="navVersion" class="badge badge-ghost text-xs">v?.?</div>
+                        <button id="themeToggleBtn" class="btn btn-xs btn-ghost theme-toggle" onclick="toggleTheme()">Dark</button>
+                    </div>
+                    <script>updateThemeIcon();</script>
                 </div>
 
                 <div class="grid grid-cols-1 px-6 gap-2">
@@ -122,15 +202,13 @@
                             <div class="grid grid-cols-1 gap-1">
                                 <span class="label-text">Scale Driver</span>
                                 <select class="select select-bordered" name="s0">
-                                    <option value="0">AND FX-i Std</option>
+                                    <option value="0">AND FX-i and FZ-i</option>
                                     <option value="1">Steinberg SBS</option>
                                     <option value="2">GNG JJB</option>
                                     <option value="3">US Solid JFDBS</option>
                                     <option value="4">JM Science</option>
                                     <option value="5">Creedmoore</option>
                                     <option value="6">Radwag PS R2</option>
-				                    <option value="7">Sartorius</option>
-                                    <option value="8">Generic Scale Driver</option>
                                 </select>
                             </div>
 
@@ -269,16 +347,6 @@
                             <div class="divider"></div>
 
                             <div class="grid grid-cols-1 gap-1">
-                                <span class="label-text">Coarse Trickler Stop Threshold</span>
-                                <input type="number" class="input input-bordered" name="c5" step="0.001">
-                            </div>
-
-                            <div class="grid grid-cols-1 gap-1">
-                                <span class="label-text">Fine Trickler Stop Threshold</span>
-                                <input type="number" class="input input-bordered" name="c6" step="0.001">
-                            </div>
-
-                            <div class="grid grid-cols-1 gap-1">
                                 <span class="label-text">Set Point Accuracy (Standard Deviation)</span>
                                 <input type="number" class="input input-bordered" name="c7" step="0.001">
                             </div>
@@ -316,12 +384,51 @@
                                 <input type="number" class="input input-bordered" name="c12" step="0.001">
                             </div>
 
+                            <div class="divider"></div>
+
+                            <div class="grid grid-cols-1 gap-1">
+                                <span class="label-text">Auto Zero on Cup Return</span>
+                                <select class="select select-bordered" name="c16">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                            </div>
+
+                            <div class="divider">Pulse Mode</div>
+
+                            <div class="grid grid-cols-1 gap-1">
+                                <span class="label-text">Enable Pulse Mode</span>
+                                <select class="select select-bordered" name="c17">
+                                    <option value="false">No</option>
+                                    <option value="true">Yes</option>
+                                </select>
+                                <span class="text-xs text-gray-500">Pulses motor near target instead of continuous run</span>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-1">
+                                <span class="label-text">Pulse Threshold (grains)</span>
+                                <input type="number" class="input input-bordered" name="c18" step="0.01" min="0.3" max="1.0">
+                                <span class="text-xs text-gray-500">Start pulsing when within this weight of target (0.3-1.0 gr)</span>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-1">
+                                <span class="label-text">Pulse Duration (ms)</span>
+                                <input type="number" class="input input-bordered" name="c19" step="5" min="10" max="200">
+                                <span class="text-xs text-gray-500">Motor on time per pulse</span>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-1">
+                                <span class="label-text">Pulse Wait (ms)</span>
+                                <input type="number" class="input input-bordered" name="c20" step="10" min="50" max="500">
+                                <span class="text-xs text-gray-500">Wait time for scale to update between pulses</span>
+                            </div>
+
                             <button class="btn btn-neutral settings-apply-btn">Apply</button>
                         </form>
                     </section>
 
-                    <!-- Wireless Settings -->
-                    <section class="settings-page" id="settings-wireless" name="Wireless" style="display: none;">
+                    <!-- WiFi Settings -->
+                    <section class="settings-page" id="settings-wifi" name="WiFi" style="display: none;">
                         <form id="wirelessConfigForm" action="/rest/wireless_config" class="grid grid-cols-1 gap-3">
                             <div class="grid grid-cols-1 gap-1">
                                 <span class="label-text">WiFi SSID</span>
@@ -360,6 +467,7 @@
                             </div>
 
                             <button class="btn btn-neutral settings-apply-btn">Apply</button>
+                            <button type="button" class="btn btn-error" onclick="resetToAP()">Reset to AP Mode</button>
                         </form>
                     </section>
 
@@ -574,28 +682,53 @@
                         </form>
                     </section>
 
-                    <!-- Mini 12864 Module Settings -->
-                    <section class="settings-page" id="settings-mini-12864-module" name="Mini 12864 Module" style="display: none;">
-                        <form id="mini12864ModuleConfigForm" action="/rest/mini_12864_config" class="grid grid-cols-1 gap-3">
+                    <!-- Display Type Selection -->
+                    <section class="settings-page" id="settings-display" name="Display" style="display: none;">
+                        <form id="displayConfigForm" action="/rest/display_config" class="grid grid-cols-1 gap-3">
+                            <div role="alert" class="alert alert-info">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-6 w-6 shrink-0 stroke-current">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>Changing display type requires a reboot.</span>
+                            </div>
+
                             <div class="grid grid-cols-1 gap-1">
-                                <span class="label-text">Inverted Rotary Button Direction</span>
-                                <select class="select select-bordered" name="b0">
-                                    <option value="true">Yes</option>
-                                    <option value="false">No</option>
+                                <span class="label-text">Display Type</span>
+                                <select class="select select-bordered" name="d0" id="displayTypeSelect" onchange="onDisplayTypeChanged()">
+                                    <option value="0">Mini 12864 (128x64 Monochrome)</option>
                                 </select>
                             </div>
 
                             <div class="grid grid-cols-1 gap-1">
-                                <span class="label-text">Display Rotation (deg)</span>
-                                <select class="select select-bordered" name="b1">
-                                    <option value="0">0</option>
-                                    <option value="2">180</option>
+                                <span class="label-text">Rotation</span>
+                                <select class="select select-bordered" name="d1" id="displayRotationSelect">
+                                    <option value="0">0°</option>
+                                    <option value="1">90°</option>
+                                    <option value="2">180°</option>
+                                    <option value="3">270°</option>
+                                </select>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-1" id="brightnessGroup">
+                                <span class="label-text">Brightness</span>
+                                <input type="range" name="d2" id="displayBrightnessSlider" min="0" max="255" value="255" class="range range-primary" oninput="updateBrightnessLabel()">
+                                <span class="label-text text-center" id="brightnessLabel">255</span>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-1" id="encoderGroup">
+                                <span class="label-text">Inverted Encoder Direction</span>
+                                <select class="select select-bordered" name="d3">
+                                    <option value="false">No</option>
+                                    <option value="true">Yes</option>
                                 </select>
                             </div>
 
                             <button class="btn btn-neutral settings-apply-btn">Apply</button>
+                            <button type="button" class="btn btn-warning" onclick="saveDisplayAndReboot()">Save & Reboot</button>
                         </form>
                     </section>
+
+
 
                     <section class="settings-page" id="settings-servo-gate" name="Servo Gate" style="display: none;">
                         <form id="servoGateConfigForm" action="/rest/servo_gate_config" class="grid grid-cols-1 gap-3">
@@ -707,22 +840,306 @@
 
                     </section>
 
+                    <!-- Errors Page -->
+                    <section class="settings-page" id="settings-errors" name="Errors" style="display: none;">
+                        <div class="grid grid-cols-1 gap-3">
+                            <div class="flex justify-between items-center">
+                                <span id="errorCountBadge" class="badge badge-error">0 errors</span>
+                                <button class="btn btn-sm btn-outline" onclick="clearErrors()">Clear All</button>
+                            </div>
+
+                            <div id="errorListContainer" class="grid grid-cols-1 gap-2">
+                                <div class="text-center text-gray-500">No errors</div>
+                            </div>
+
+                            <button class="btn btn-neutral" onclick="refreshErrors()">Refresh</button>
+                        </div>
+                    </section>
+
+                    <!-- AI Tuning Page -->
+                    <section class="settings-page" id="settings-ai-tuning" name="AI Tuning" style="display: none;">
+                        <div class="grid grid-cols-1 gap-3">
+                            <div role="alert" class="alert">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-6 w-6 shrink-0 stroke-current">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span>Auto-tune PID parameters for coarse and fine tricklers. Place powder in hopper before starting.</span>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-1">
+                                <span class="label-text">Select Profile</span>
+                                <select class="select select-bordered select-primary" id="aiTuningProfileSelect">
+                                    <option value="0">#0</option>
+                                    <option value="1">#1</option>
+                                    <option value="2">#2</option>
+                                    <option value="3">#3</option>
+                                    <option value="4">#4</option>
+                                    <option value="5">#5</option>
+                                    <option value="6">#6</option>
+                                    <option value="7">#7</option>
+                                </select>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-1">
+                                <span class="label-text">Target Weight (grains)</span>
+                                <input type="number" class="input input-bordered" id="aiTuningTargetWeight" value="30.0" step="0.01" min="1" max="200">
+                            </div>
+
+                            <form id="aiTuningThresholdsForm" action="/rest/charge_mode_config" class="grid grid-cols-1 gap-3">
+                            <div class="divider">Thresholds</div>
+
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="grid grid-cols-1 gap-1">
+                                    <span class="label-text">Coarse Stop Threshold (gn)</span>
+                                    <input type="number" class="input input-bordered input-sm" name="c5" step="0.001">
+                                </div>
+                                <div class="grid grid-cols-1 gap-1">
+                                    <span class="label-text">Fine Stop Threshold (gn)</span>
+                                    <input type="number" class="input input-bordered input-sm" name="c6" step="0.001">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="grid grid-cols-1 gap-1">
+                                    <span class="label-text">Coarse Time Target (s)</span>
+                                    <input type="number" class="input input-bordered input-sm" id="aiCoarseTimeTargetDisplay" step="0.1"
+                                        oninput="this.nextElementSibling.value = Math.round(this.value * 1000)">
+                                    <input type="hidden" name="c13">
+                                </div>
+                                <div class="grid grid-cols-1 gap-1">
+                                    <span class="label-text">Total Time Target (s)</span>
+                                    <input type="number" class="input input-bordered input-sm" id="aiTotalTimeTargetDisplay" step="0.1"
+                                        oninput="this.nextElementSibling.value = Math.round(this.value * 1000)">
+                                    <input type="hidden" name="c14">
+                                </div>
+                            </div>
+
+                            <button class="btn btn-neutral settings-apply-btn">Apply</button>
+                            </form>
+
+                            <div class="divider">Tuning Status</div>
+
+                            <!-- Status Display -->
+                            <div id="aiTuningStatusSection" class="grid grid-cols-1 gap-2">
+                                <div class="flex justify-between">
+                                    <span class="label-text">Status:</span>
+                                    <span id="aiTuningState" class="badge badge-neutral">Idle</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="label-text">Drops:</span>
+                                    <span id="aiTuningDrops">0</span>
+                                </div>
+                            </div>
+
+                            <!-- Cycle Report (live log during tuning) -->
+                            <div id="aiCycleReport" style="display: none;">
+                                <div class="divider">Cycle Report</div>
+                                <div id="aiCycleLog" class="font-mono text-xs bg-base-200 rounded-box p-2 max-h-60 overflow-y-auto whitespace-pre-wrap"></div>
+                            </div>
+
+                            <!-- Current Parameters (shown during tuning) -->
+                            <div id="aiTuningCurrentParams" class="grid grid-cols-1 gap-2" style="display: none;">
+                                <div class="divider">Current Test Parameters</div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="stat bg-base-200 rounded-box p-2">
+                                        <div class="stat-title text-xs">Coarse Kp</div>
+                                        <div id="aiCurrentCoarseKp" class="stat-value text-lg">-</div>
+                                    </div>
+                                    <div class="stat bg-base-200 rounded-box p-2">
+                                        <div class="stat-title text-xs">Coarse Kd</div>
+                                        <div id="aiCurrentCoarseKd" class="stat-value text-lg">-</div>
+                                    </div>
+                                    <div class="stat bg-base-200 rounded-box p-2">
+                                        <div class="stat-title text-xs">Fine Kp</div>
+                                        <div id="aiCurrentFineKp" class="stat-value text-lg">-</div>
+                                    </div>
+                                    <div class="stat bg-base-200 rounded-box p-2">
+                                        <div class="stat-title text-xs">Fine Kd</div>
+                                        <div id="aiCurrentFineKd" class="stat-value text-lg">-</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Recommended Parameters (shown when complete) -->
+                            <div id="aiTuningRecommendedParams" class="grid grid-cols-1 gap-2" style="display: none;">
+                                <div class="divider">Recommended Parameters</div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="stat bg-success/20 rounded-box p-2">
+                                        <div class="stat-title text-xs">Coarse Kp</div>
+                                        <div id="aiRecCoarseKp" class="stat-value text-lg">-</div>
+                                    </div>
+                                    <div class="stat bg-success/20 rounded-box p-2">
+                                        <div class="stat-title text-xs">Coarse Kd</div>
+                                        <div id="aiRecCoarseKd" class="stat-value text-lg">-</div>
+                                    </div>
+                                    <div class="stat bg-success/20 rounded-box p-2">
+                                        <div class="stat-title text-xs">Fine Kp</div>
+                                        <div id="aiRecFineKp" class="stat-value text-lg">-</div>
+                                    </div>
+                                    <div class="stat bg-success/20 rounded-box p-2">
+                                        <div class="stat-title text-xs">Fine Kd</div>
+                                        <div id="aiRecFineKd" class="stat-value text-lg">-</div>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 text-center text-sm">
+                                    <div>
+                                        <div class="text-gray-500">Avg Overthrow</div>
+                                        <div id="aiStatOverthrow">-</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-gray-500">Avg Time</div>
+                                        <div id="aiStatTime">-</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="divider"></div>
+
+                            <!-- Control Buttons -->
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="aiTuningStartBtn" class="btn btn-primary" onclick="startAiTuning()">Start</button>
+                                <button id="aiTuningCancelBtn" class="btn btn-warning" onclick="cancelAiTuning()" disabled>Cancel</button>
+                            </div>
+                            <button id="aiTuningApplyBtn" class="btn btn-success w-full" onclick="applyAiTuning()" disabled>Apply Recommended Parameters</button>
+
+                            <!-- Collapsible Advanced Settings -->
+                            <details class="collapse collapse-arrow bg-base-200 rounded-box">
+                                <summary class="collapse-title font-medium">Advanced Settings</summary>
+                                <div class="collapse-content">
+                                    <div id="aiAdvancedSettings" class="grid grid-cols-1 gap-3 pt-2">
+                                        <!-- Kp/Kd Range Table -->
+                                        <table class="table table-compact table-sm w-full">
+                                            <thead>
+                                                <tr>
+                                                    <th></th>
+                                                    <th class="text-center">Min</th>
+                                                    <th class="text-center">Max</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td class="font-medium">Coarse Kp</td>
+                                                    <td><input type="number" id="cfgCoarseKpMin" class="input input-bordered input-sm w-full" step="0.01" min="0"></td>
+                                                    <td><input type="number" id="cfgCoarseKpMax" class="input input-bordered input-sm w-full" step="0.1" min="0"></td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="font-medium">Coarse Kd</td>
+                                                    <td><input type="number" id="cfgCoarseKdMin" class="input input-bordered input-sm w-full" step="0.01" min="0"></td>
+                                                    <td><input type="number" id="cfgCoarseKdMax" class="input input-bordered input-sm w-full" step="0.1" min="0"></td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="font-medium">Fine Kp</td>
+                                                    <td><input type="number" id="cfgFineKpMin" class="input input-bordered input-sm w-full" step="0.01" min="0"></td>
+                                                    <td><input type="number" id="cfgFineKpMax" class="input input-bordered input-sm w-full" step="0.1" min="0"></td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="font-medium">Fine Kd</td>
+                                                    <td><input type="number" id="cfgFineKdMin" class="input input-bordered input-sm w-full" step="0.01" min="0"></td>
+                                                    <td><input type="number" id="cfgFineKdMax" class="input input-bordered input-sm w-full" step="0.1" min="0"></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+
+                                        <!-- Noise Margin -->
+                                        <div class="grid grid-cols-1 gap-1">
+                                            <span class="label-text">Noise Margin (grains) - Convergence threshold</span>
+                                            <input type="number" id="cfgNoiseMargin" class="input input-bordered input-sm" step="0.01" min="0">
+                                        </div>
+
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <button class="btn btn-sm btn-primary" onclick="saveAiConfig()">Save</button>
+                                            <button class="btn btn-sm btn-ghost" onclick="loadAiConfig()">Reset</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+
+                            <div class="divider">ML Data Collection</div>
+                            <p class="text-sm text-gray-500 -mt-2 mb-2">Collect data while throwing actual charges to refine throws</p>
+
+                            <!-- ML Section -->
+                            <div class="grid grid-cols-1 gap-3">
+                                <!-- Enable/Disable Toggle -->
+                                <div class="flex justify-between items-center">
+                                    <span class="label-text">Enable ML data collection</span>
+                                    <input type="checkbox" id="mlDataEnabled" class="toggle toggle-primary" onchange="toggleMlDataCollection()">
+                                </div>
+
+                                <!-- Overthrow explanation (matches LED colors) -->
+                                <div class="text-xs text-gray-500 bg-base-200 rounded p-2">
+                                    <strong>Overthrow:</strong> + over target, - under target<br>
+                                    <span class="text-success">■</span> Good (±0.02g) |
+                                    <span class="text-warning">■</span> Under |
+                                    <span class="text-error">■</span> Over
+                                </div>
+
+                                <!-- Status -->
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-500">Drops recorded:</span>
+                                    <div class="flex items-center gap-2">
+                                        <span id="aiHistoryCount" class="badge badge-info">0 drops</span>
+                                        <button class="btn btn-xs btn-ghost" onclick="loadAiTuningHistory()">Refresh</button>
+                                        <button class="btn btn-xs btn-ghost" onclick="clearAiTuningHistory()">Clear</button>
+                                    </div>
+                                </div>
+
+                                <!-- Suggested Refinements -->
+                                <div id="aiSuggestedSection" style="display: none;">
+                                    <div class="alert alert-success">
+                                        <div class="w-full">
+                                            <span class="font-bold">ML Suggestions (Fine Only)</span>
+                                            <div class="grid grid-cols-2 gap-2 w-full mt-2 text-sm">
+                                                <div>Fine Kp: <span id="aiSugFineKp" class="font-mono">-</span></div>
+                                                <div>Fine Kd: <span id="aiSugFineKd" class="font-mono">-</span></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-sm btn-success w-full mt-2" onclick="applyRefinedParams()">Apply ML Suggestions</button>
+                                </div>
+
+                                <!-- Drop History Table -->
+                                <details class="collapse collapse-arrow bg-base-200">
+                                    <summary class="collapse-title text-sm font-medium">Drop History</summary>
+                                    <div class="collapse-content">
+                                        <div id="aiHistoryList" class="overflow-x-auto">
+                                            <table class="table table-xs">
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Profile</th>
+                                                        <th>Overthrow</th>
+                                                        <th>Time</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="aiHistoryTableBody">
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                    </section>
+
                 </div>
-            </div> 
+            </div>
             <div class="drawer-side exclude-bottom-nav">
-                <label id="closeDrawerSide" for="settingsDrawer" aria-label="close sidebar" class="drawer-overlay"></label> 
-                <ul id=drawerSlide" class="menu p-2 w-60 min-h-full bg-base-200">
+                <label id="closeDrawerSide" for="settingsDrawer" aria-label="close sidebar" class="drawer-overlay"></label>
+                <ul id="drawerSlide" class="menu menu-vertical p-2 w-60 bg-base-200 pb-20">
                     <!-- Sidebar content here -->
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-scale')">Scale</a></li>
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-profile')">Profiles</a></li>
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-charge-mode')">Charge Mode</a></li>
-                    <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-wireless')">Wireless</a></li>
+                    <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-ai-tuning')">AI Tuning</a></li>
+                    <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-wifi')">WiFi</a></li>
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-coarse-motor')">Coarse Motor</a></li>
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-fine-motor')">Fine Motor</a></li>
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-neopixel-led')">Neopixel LED</a></li>
-                    <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-mini-12864-module')">Mini 12864 Module</a></li>
+                    <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-display')">Display</a></li>
+
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-servo-gate')">Servo Gate</a></li>
                     <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-system-control')">System Control</a></li>
+                    <li><a class="text-lg" onclick="onSettingsLinkClicked('settings-errors')">Errors</a></li>
                 </ul>
             </div>
         </div>
@@ -821,25 +1238,6 @@
     </form>
 </dialog>
 
-<dialog id="overThrowDialog" class="modal">
-    <div class="modal-box">
-        <h3 class="font-bold text-lg">Warning</h3>
-        <p class="py-4">Over Throw!</p>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-    </form>
-</dialog>
-
-<dialog id="underThrowDialog" class="modal">
-    <div class="modal-box">
-        <h3 class="font-bold text-lg">Warning</h3>
-        <p class="py-4">Under Throw!</p>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-    </form>
-</dialog>
 
 <dialog id="settingsAppliedSuccessDialog" class="modal">
     <div class="modal-box" id="settingsAppliedSuccessText">
@@ -853,26 +1251,6 @@
 
 <dialog id="settingsRestoreFailedDialog" class="modal">
     <div class="modal-box" id="settingsRestoreFailedText">
-    </div>
-    <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-    </form>
-</dialog>
-
-<dialog id="scaleZeroedSuccessDialog" class="modal">
-    <div class="modal-box">
-        <h3 class="font-bold text-lg">Info</h3>
-        <p class="py-4">Scale Zero Successful</p>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-    </form>
-</dialog>
-
-<dialog id="scaleZeroedFailDialog" class="modal">
-    <div class="modal-box">
-        <h3 class="font-bold text-lg">Error</h3>
-        <p class="py-4">Failed to Zero Scale</p>
     </div>
     <form method="dialog" class="modal-backdrop">
         <button>close</button>
@@ -893,11 +1271,6 @@
         NO_EVENT: 1 << 0, 
         UNDER_CHARGE: 1 << 1, 
         OVER_CHARGE: 1 << 2, 
-    });
-
-    const ScaleAction = Object.freeze({ 
-        NO_ACTION: 0,
-        FORCE_ZERO: 1,
     });
 
     const CleanupModeState = Object.freeze({
@@ -1078,6 +1451,25 @@
         })
     }
 
+    function onTricklerProfileChanged(select) {
+        const uri = `/rest/profile_config?pf=${encodeURIComponent(select.value)}`;
+        fetch(uri)
+        .then(response => response.json())
+        .then(() => {
+            // Sync other profile dropdowns
+            const mainSelect = document.getElementById("select_profile_option");
+            if (mainSelect) {
+                mainSelect.value = select.value;
+                populateProfileSelection(mainSelect);
+            }
+            const aiSelect = document.getElementById("aiTuningProfileSelect");
+            if (aiSelect) aiSelect.value = select.value;
+        })
+        .catch(error => {
+            console.error("Error changing profile:", error);
+        });
+    }
+
     // Function to poll charge mode status (weight, progress, etc)
     function pollChargeModeStatus() {
         fetch("/rest/charge_mode_state")
@@ -1106,8 +1498,17 @@
             _setCurrentWeight(current_charge_weight, percentage);
             _setChargeModeStateWidget(charge_mode_state);
 
-            profileName = document.getElementById("profileName");
-            profileName.innerText = String(profile_name);
+            // Update trickler profile dropdown to reflect current profile
+            const tricklerSelect = document.getElementById("tricklerProfileSelect");
+            if (tricklerSelect) {
+                // Find option matching profile name and select it
+                for (const opt of tricklerSelect.options) {
+                    if (opt.text === String(profile_name).trim()) {
+                        tricklerSelect.value = opt.value;
+                        break;
+                    }
+                }
+            }
             
             // Find the charge time element and update its text content
             const chargeTimeElement = document.getElementById('chargeTimeValue');
@@ -1122,21 +1523,13 @@
                 _setStartStopButtonWidget(true);
             }
 
-            // Process event
-            if (charge_mode_event != ChargeModeEvent.NO_EVENT) {
-                var dialog_name = null;
-                if (charge_mode_event == ChargeModeEvent.UNDER_CHARGE) {
-                    dialog_name = "underThrowDialog";
-                }
-                else if (charge_mode_event == ChargeModeEvent.OVER_CHARGE) {
-                    dialog_name = "overThrowDialog";
-                }
 
-                // Show modal
-                const dialogModal = document.getElementById(dialog_name);
-                if (dialogModal) {
-                    dialogModal.showModal();
-                }
+            // Poll AI tuning status for main panel
+            pollAiTuningMainPanel();
+
+            // Check for ML suggestions (only when not in AI tuning)
+            if (!window.aiTuningActive) {
+                checkMlSuggestions();
             }
         })
         .catch(error => {
@@ -1149,34 +1542,6 @@
             clearTimeout(pollSetTimeoutId);
             pollSetTimeoutId = setTimeout(pollChargeModeStatus, 500);
         })
-    }
-
-    // Send scale force zero command
-    function scaleForceZero() {
-        const uri = `/rest/scale_action?a0=${encodeURIComponent(ScaleAction.FORCE_ZERO)}`;
-
-        // Call the scale action URI
-        fetch(uri)
-        .then(response => {
-            return response.json();
-        })
-        .then(data => {
-            // console.log(data);
-
-            var scale_action_response = data["a0"];
-
-            if (scale_action_response == ScaleAction.FORCE_ZERO) {
-                const dialogModal = document.getElementById("scaleZeroedSuccessDialog");
-                dialogModal.showModal();
-            }
-            else {
-                const dialogModal = document.getElementById("scaleZeroedFailDialog");
-                dialogModal.showModal();
-        }
-        })
-        .catch(error => {
-            console.error("Error applying force zero");
-        });
     }
 
     function servoGateSetState(state) {
@@ -1193,6 +1558,10 @@
         .catch(error => {
             console.error("Error applying servo gate state");
         });
+    }
+
+    function setPicoLed(on) {
+        fetch('/rest/pico_led?state=' + (on ? '1' : '0')).catch(() => {});
     }
 
     // Switch pages
@@ -1315,6 +1684,48 @@
                 }
             })
         }
+
+        // Special handling for display section
+        if (sectionId === "settings-display") {
+            setTimeout(() => {
+                onDisplayTypeChanged();
+                updateBrightnessLabel();
+            }, 100);
+        }
+
+        // Special handling for errors section
+        if (sectionId === "settings-errors") {
+            refreshErrors();
+        }
+
+        // Special handling for profile section
+        if (sectionId === "settings-profile") {
+            loadProfileDropdowns();
+        }
+
+        // Special handling for AI tuning section
+        if (sectionId === "settings-ai-tuning") {
+            loadAiTuningProfiles();
+            loadAiTuningThresholds();
+            loadAiTuningHistory();
+            loadMlDataEnabled();
+            loadAiConfig();
+            // Check current status in case tuning is already running
+            fetch("/rest/ai_tuning_status")
+            .then(response => response.json())
+            .then(data => {
+                updateAiTuningUI(data);
+                if (data.is_active) {
+                    document.getElementById("aiTuningStartBtn").disabled = true;
+                    document.getElementById("aiTuningCancelBtn").disabled = false;
+                    document.getElementById("aiTuningProfileSelect").disabled = true;
+                    pollAiTuningStatus();
+                }
+            })
+            .catch(error => {
+                console.error("Error checking AI tuning status:", error);
+            });
+        }
     }
 
     // Function to retrieve the profile values when the index is updated
@@ -1339,7 +1750,7 @@
     }
 
     // Submit the form data to the action URI
-    function putForm(targetForm, saveToEeprom) {
+    function putForm(targetForm, savePersistent) {
         const paramData = new FormData(targetForm);
 
         // Remove empty param
@@ -1349,8 +1760,13 @@
             }
         }
 
-        if (saveToEeprom) {
-            paramData.append('ee', true)
+        if (savePersistent) {
+            // WiFi config saves to flash, others save to EEPROM
+            if (targetForm.action.includes('wireless_config')) {
+                paramData.append('save', true)
+            } else {
+                paramData.append('ee', true)
+            }
         }
 
         const queryString = new URLSearchParams(paramData).toString();
@@ -1379,6 +1795,16 @@
                 }
             })
 
+            // Refresh AI tuning seconds display after save
+            if (targetForm.id === 'aiTuningThresholdsForm') {
+                loadAiTuningThresholds();
+            }
+
+            // Refresh profile dropdowns if profile was saved (name may have changed)
+            if (targetForm.action.includes('profile_config')) {
+                loadProfileDropdowns();
+            }
+
             // Show the success modal
             const settingsAppliedSuccessDialog = document.getElementById("settingsAppliedSuccessDialog");
             settingsAppliedSuccessDialog.showModal();
@@ -1403,14 +1829,20 @@
 
             // Bind the button
             const dialogApplySettingsButton = document.getElementById("dialogApplySettingsButton");
-            const dialogSaveToEepromButton = document.getElementById("dialogSaveToEepromButton");
+            const dialogSaveButton = document.getElementById("dialogSaveToEepromButton");
+            const dialogText = applySettingsDialog.querySelector("p");
+
+            // WiFi saves to flash, others save to EEPROM
+            const isWiFi = form.action.includes('wireless_config');
+            dialogSaveButton.innerText = isWiFi ? "Save to Flash" : "Save to EEPROM";
+            dialogText.innerText = isWiFi ? "Do you also want to save settings to flash?" : "Do you also want to save settings to EEPROM?";
 
             // Bind actions
             dialogApplySettingsButton.onclick = function() {
                 putForm(form, false);
             }
 
-            dialogSaveToEepromButton.onclick = function() {
+            dialogSaveButton.onclick = function() {
                 putForm(form, true);
             }
 
@@ -1641,13 +2073,646 @@
         input.click();
     }
 
+    // Error handling functions
+    function refreshErrors() {
+        fetch("/rest/errors")
+        .then(response => response.json())
+        .then(data => {
+            const count = data.count;
+            const errors = data.errors;
+
+            // Update badge
+            const badge = document.getElementById("errorCountBadge");
+            badge.innerText = count + " error" + (count !== 1 ? "s" : "");
+            if (count > 0) {
+                badge.classList.remove("badge-success");
+                badge.classList.add("badge-error");
+            } else {
+                badge.classList.remove("badge-error");
+                badge.classList.add("badge-success");
+            }
+
+            // Update error list
+            const container = document.getElementById("errorListContainer");
+            if (count === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500">No errors</div>';
+            } else {
+                let html = '';
+                for (const err of errors) {
+                    html += `<div class="alert alert-error">
+                        <span class="font-mono">[${err.cat}:${err.code}]</span>
+                        <span>${err.msg}</span>
+                    </div>`;
+                }
+                container.innerHTML = html;
+            }
+        })
+        .catch(error => {
+            console.error("Error fetching errors:", error);
+        });
+    }
+
+    function clearErrors() {
+        fetch("/rest/errors?clear=1")
+        .then(response => response.json())
+        .then(data => {
+            refreshErrors();
+        })
+        .catch(error => {
+            console.error("Error clearing errors:", error);
+        });
+    }
+function resetToAP() {        if (confirm("This will disable WiFi and reboot into AP mode. Continue?")) {            fetch("/rest/wireless_config?w4=false&save=true")            .then(() => {                fetch("/rest/system_control?s4=true&s5=true");                alert("Rebooting to AP mode... Connect to OpenTrickler WiFi network.");            })            .catch(() => alert("Failed to reset to AP mode."));        }    }
+
+    function saveDisplayAndReboot() {
+        const form = document.getElementById("displayConfigForm");
+        const formData = new FormData(form);
+        const displayType = formData.get("d0");
+        const rotation = formData.get("d1");
+        const brightness = formData.get("d2");
+        const invertedEncoder = formData.get("d3");
+        const displayNames = ["Mini 12864"];
+
+        if (confirm(`Save display settings and reboot? The device will restart.`)) {
+            fetch(`/rest/display_config?d0=${displayType}&d1=${rotation}&d2=${brightness}&d3=${invertedEncoder}&ee=true`)
+            .then(() => {
+                fetch("/rest/system_control?s4=true&s5=true");
+                alert("Display settings saved. Rebooting...");
+            })
+            .catch(() => alert("Failed to save display settings."));
+        }
+    }
+
+    function onDisplayTypeChanged() {
+        const displayType = document.getElementById("displayTypeSelect").value;
+        const brightnessGroup = document.getElementById("brightnessGroup");
+        const rotationSelect = document.getElementById("displayRotationSelect");
+
+        // Show/hide settings based on display type
+        if (displayType === "0") {
+            // Mini 12864: hide brightness, limit rotation to 0/180
+            brightnessGroup.style.display = "none";
+            rotationSelect.querySelectorAll("option").forEach(opt => {
+                opt.style.display = (opt.value === "0" || opt.value === "2") ? "block" : "none";
+            });
+        }
+        // Encoder setting shown for all display types
+    }
+
+    function updateBrightnessLabel() {
+        const slider = document.getElementById("displayBrightnessSlider");
+        const label = document.getElementById("brightnessLabel");
+        label.innerText = slider.value;
+    }
+
+    function loadDisplayConfig() {
+        fetch("/rest/display_config")
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById("displayTypeSelect").value = data.d0 || 0;
+            document.getElementById("displayRotationSelect").value = data.d1 || 0;
+            document.getElementById("displayBrightnessSlider").value = data.d2 !== undefined ? data.d2 : 255;
+            updateBrightnessLabel();
+            // Set inverted encoder
+            const encoderSelect = document.querySelector("#displayConfigForm select[name='d3']");
+            if (encoderSelect) encoderSelect.value = data.d3 ? "true" : "false";
+            onDisplayTypeChanged();
+        })
+        .catch(() => {});
+    }
+
+    // AI Tuning functions
+    var aiTuningPollId = null;
+
+    function startAiTuning() {
+        const profileIdx = document.getElementById("aiTuningProfileSelect").value;
+        const targetWeight = document.getElementById("aiTuningTargetWeight").value;
+        const uri = `/rest/ai_tuning_start?profile_idx=${profileIdx}&target=${targetWeight}`;
+
+        fetch(uri)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update UI
+                document.getElementById("aiTuningStartBtn").disabled = true;
+                document.getElementById("aiTuningCancelBtn").disabled = false;
+                document.getElementById("aiTuningApplyBtn").disabled = true;
+                document.getElementById("aiTuningProfileSelect").disabled = true;
+                document.getElementById("aiTuningTargetWeight").disabled = true;
+
+                // Start polling
+                pollAiTuningStatus();
+            } else {
+                alert("Failed to start tuning: " + data.error);
+            }
+        })
+        .catch(error => {
+            console.error("Error starting AI tuning:", error);
+            alert("Error starting AI tuning");
+        });
+    }
+
+    function cancelAiTuning() {
+        fetch("/rest/ai_tuning_cancel")
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                stopAiTuningPoll();
+                resetAiTuningUI();
+            }
+        })
+        .catch(error => {
+            console.error("Error cancelling AI tuning:", error);
+        });
+    }
+
+    function applyAiTuning() {
+        fetch("/rest/ai_tuning_apply")
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert("Parameters applied and saved to profile!");
+                resetAiTuningUI();
+            } else {
+                alert("Failed to apply: " + data.error);
+            }
+        })
+        .catch(error => {
+            console.error("Error applying AI tuning:", error);
+            alert("Error applying parameters");
+        });
+    }
+
+    function pollAiTuningStatus() {
+        fetch("/rest/ai_tuning_status")
+        .then(response => response.json())
+        .then(data => {
+            updateAiTuningUI(data);
+
+            // Continue polling if active
+            if (data.is_active) {
+                aiTuningPollId = setTimeout(pollAiTuningStatus, 500);
+            } else {
+                stopAiTuningPoll();
+            }
+        })
+        .catch(error => {
+            console.error("Error polling AI tuning status:", error);
+            stopAiTuningPoll();
+        });
+    }
+
+    function stopAiTuningPoll() {
+        if (aiTuningPollId) {
+            clearTimeout(aiTuningPollId);
+            aiTuningPollId = null;
+        }
+    }
+
+    // Poll AI tuning status for main charge page panel
+    function pollAiTuningMainPanel() {
+        fetch("/rest/ai_tuning_status")
+        .then(response => response.json())
+        .then(data => {
+            const panel = document.getElementById("aiTuningMainPanel");
+            if (!panel) return;
+
+            window.aiTuningActive = data.is_active;
+
+            if (data.is_active) {
+                panel.style.display = "block";
+
+                // Phase
+                const phaseEl = document.getElementById("aiMainPhase");
+                if (data.state === "phase1_coarse") {
+                    phaseEl.innerText = "Phase 1: Coarse";
+                    phaseEl.className = "badge badge-primary";
+                } else if (data.state === "phase2_fine") {
+                    phaseEl.innerText = "Phase 2: Fine";
+                    phaseEl.className = "badge badge-secondary";
+                }
+
+                // Drop count
+                document.getElementById("aiMainDrop").innerText =
+                    data.drops_completed;
+
+                // Current testing params
+                if (data.current_params) {
+                    const kp = data.state === "phase1_coarse" ?
+                        data.current_params.coarse_kp : data.current_params.fine_kp;
+                    const kd = data.state === "phase1_coarse" ?
+                        data.current_params.coarse_kd : data.current_params.fine_kd;
+                    document.getElementById("aiMainTesting").innerText =
+                        "Kp=" + kp.toFixed(2) + " Kd=" + kd.toFixed(2);
+                }
+
+                // Last drop result
+                if (data.last_drop) {
+                    const ot = data.last_drop.overthrow;
+                    const time = (data.last_drop.total_time_ms / 1000).toFixed(1);
+                    document.getElementById("aiMainLast").innerText =
+                        (ot >= 0 ? "+" : "") + ot.toFixed(3) + "g " + time + "s";
+                }
+
+            } else {
+                panel.style.display = "none";
+            }
+        })
+        .catch(() => {
+            window.aiTuningActive = false;
+            const panel = document.getElementById("aiTuningMainPanel");
+            if (panel) panel.style.display = "none";
+        });
+    }
+
+    var aiLastDropCount = 0;
+
+    function updateAiTuningUI(data) {
+        // Update state badge
+        const stateBadge = document.getElementById("aiTuningState");
+        stateBadge.innerText = data.state;
+        stateBadge.className = "badge";
+        if (data.state === "idle") {
+            stateBadge.classList.add("badge-neutral");
+        } else if (data.state === "complete") {
+            stateBadge.classList.add("badge-success");
+        } else if (data.state === "error") {
+            stateBadge.classList.add("badge-error");
+        } else {
+            stateBadge.classList.add("badge-primary");
+        }
+
+        // Update drop count
+        document.getElementById("aiTuningDrops").innerText = data.drops_completed;
+
+        // Cycle report log
+        const cycleDiv = document.getElementById("aiCycleReport");
+        const cycleLog = document.getElementById("aiCycleLog");
+        if (data.is_active || data.is_complete) {
+            cycleDiv.style.display = "block";
+            if (data.drops_completed > aiLastDropCount && data.last_drop) {
+                const d = data.last_drop;
+                const ot = d.overthrow;
+                const otStr = (ot >= 0 ? "+" : "") + ot.toFixed(3) + "gn";
+                const phase = data.state === "phase1_coarse" ? "C" : "F";
+                let line = "#" + d.drop_num + " " + phase + ": Kp=" + d.kp.toFixed(3) + " Kd=" + d.kd.toFixed(3) + " → " + otStr + " " + (d.total_time_ms/1000).toFixed(1) + "s";
+                if (data.current_params) {
+                    const nkp = data.state === "phase1_coarse" ? data.current_params.coarse_kp : data.current_params.fine_kp;
+                    const nkd = data.state === "phase1_coarse" ? data.current_params.coarse_kd : data.current_params.fine_kd;
+                    line += " → next Kp=" + nkp.toFixed(3) + " Kd=" + nkd.toFixed(3);
+                }
+                cycleLog.innerText += line + "\n";
+                cycleLog.scrollTop = cycleLog.scrollHeight;
+                aiLastDropCount = data.drops_completed;
+            }
+        } else {
+            cycleDiv.style.display = "none";
+        }
+
+        // Show/hide current params
+        const currentParamsDiv = document.getElementById("aiTuningCurrentParams");
+        if (data.is_active && data.current_params) {
+            currentParamsDiv.style.display = "block";
+            document.getElementById("aiCurrentCoarseKp").innerText = data.current_params.coarse_kp.toFixed(3);
+            document.getElementById("aiCurrentCoarseKd").innerText = data.current_params.coarse_kd.toFixed(3);
+            document.getElementById("aiCurrentFineKp").innerText = data.current_params.fine_kp.toFixed(3);
+            document.getElementById("aiCurrentFineKd").innerText = data.current_params.fine_kd.toFixed(3);
+        } else {
+            currentParamsDiv.style.display = "none";
+        }
+
+        // Show/hide recommended params
+        const recParamsDiv = document.getElementById("aiTuningRecommendedParams");
+        if (data.is_complete && data.recommended_params) {
+            recParamsDiv.style.display = "block";
+            document.getElementById("aiRecCoarseKp").innerText = data.recommended_params.coarse_kp.toFixed(3);
+            document.getElementById("aiRecCoarseKd").innerText = data.recommended_params.coarse_kd.toFixed(3);
+            document.getElementById("aiRecFineKp").innerText = data.recommended_params.fine_kp.toFixed(3);
+            document.getElementById("aiRecFineKd").innerText = data.recommended_params.fine_kd.toFixed(3);
+
+            if (data.statistics) {
+                document.getElementById("aiStatOverthrow").innerText = data.statistics.avg_overthrow.toFixed(2) + " gr";
+                document.getElementById("aiStatTime").innerText = data.statistics.avg_time.toFixed(1) + " ms";
+            }
+
+            // Enable apply button
+            document.getElementById("aiTuningApplyBtn").disabled = false;
+            document.getElementById("aiTuningStartBtn").disabled = false;
+            document.getElementById("aiTuningCancelBtn").disabled = true;
+            document.getElementById("aiTuningProfileSelect").disabled = false;
+        } else {
+            recParamsDiv.style.display = "none";
+        }
+
+        // Handle error state - show best params found and allow apply
+        if (data.state === "error") {
+            const recParamsDiv = document.getElementById("aiTuningRecommendedParams");
+            recParamsDiv.style.display = "block";
+
+            if (data.best_params) {
+                document.getElementById("aiRecCoarseKp").innerText = data.best_params.coarse_kp.toFixed(3);
+                document.getElementById("aiRecCoarseKd").innerText = data.best_params.coarse_kd.toFixed(3);
+                document.getElementById("aiRecFineKp").innerText = data.best_params.fine_kp.toFixed(3);
+                document.getElementById("aiRecFineKd").innerText = data.best_params.fine_kd.toFixed(3);
+            }
+
+            // Show error message
+            if (data.error_message) {
+                document.getElementById("aiStatOverthrow").innerText = "Error";
+                document.getElementById("aiStatTime").innerText = data.error_message;
+            }
+
+            // Enable apply button for best values
+            document.getElementById("aiTuningApplyBtn").disabled = false;
+            document.getElementById("aiTuningStartBtn").disabled = false;
+            document.getElementById("aiTuningCancelBtn").disabled = true;
+            document.getElementById("aiTuningProfileSelect").disabled = false;
+        }
+
+        // Handle completion
+        if (!data.is_active && !data.is_complete && data.state !== "error") {
+            // Cancelled
+            document.getElementById("aiTuningStartBtn").disabled = false;
+            document.getElementById("aiTuningCancelBtn").disabled = true;
+            document.getElementById("aiTuningProfileSelect").disabled = false;
+        }
+    }
+
+    function resetAiTuningUI() {
+        document.getElementById("aiTuningStartBtn").disabled = false;
+        document.getElementById("aiTuningCancelBtn").disabled = true;
+        document.getElementById("aiTuningApplyBtn").disabled = true;
+        document.getElementById("aiTuningProfileSelect").disabled = false;
+        document.getElementById("aiTuningTargetWeight").disabled = false;
+        document.getElementById("aiTuningState").innerText = "Idle";
+        document.getElementById("aiTuningState").className = "badge badge-neutral";
+        document.getElementById("aiTuningDrops").innerText = "0";
+        document.getElementById("aiCycleReport").style.display = "none";
+        document.getElementById("aiCycleLog").innerText = "";
+        aiLastDropCount = 0;
+        document.getElementById("aiTuningCurrentParams").style.display = "none";
+        document.getElementById("aiTuningRecommendedParams").style.display = "none";
+    }
+
+    function loadProfileDropdowns() {
+        fetch("/rest/profile_summary")
+        .then(response => response.json())
+        .then(data => {
+            const profiles = data["s0"];  // Object: {"0":"name", "1":"name2", ...}
+            const currentIdx = data["s1"];
+
+            // Update all profile dropdowns
+            const dropdowns = [
+                document.getElementById("aiTuningProfileSelect"),
+                document.getElementById("select_profile_option"),
+                document.getElementById("quickChangeProfileSelect"),
+                document.getElementById("tricklerProfileSelect")
+            ];
+
+            dropdowns.forEach(select => {
+                if (!select) return;
+                // Clear existing options
+                select.innerHTML = '';
+                // Add options with profile names (iterate object keys)
+                for (const idx in profiles) {
+                    const option = document.createElement("option");
+                    option.value = idx;
+                    const name = profiles[idx] ? profiles[idx].trim() : '';
+                    if (name && name.length > 0) {
+                        option.text = name;
+                    } else {
+                        option.text = "#" + idx;
+                    }
+                    select.appendChild(option);
+                }
+            });
+
+            // Set main profile dropdown to current profile
+            const mainSelect = document.getElementById("select_profile_option");
+            if (mainSelect && currentIdx !== undefined) {
+                mainSelect.value = currentIdx;
+                populateProfileSelection(mainSelect);
+            }
+
+            // Also set AI tuning dropdown to current profile
+            const aiSelect = document.getElementById("aiTuningProfileSelect");
+            if (aiSelect && currentIdx !== undefined) {
+                aiSelect.value = currentIdx;
+            }
+
+            // Set trickler profile dropdown to current profile
+            const tricklerSelect = document.getElementById("tricklerProfileSelect");
+            if (tricklerSelect && currentIdx !== undefined) {
+                tricklerSelect.value = currentIdx;
+            }
+        })
+        .catch(error => {
+            console.error("Error loading profiles:", error);
+        });
+    }
+
+    // Alias for backward compatibility
+    function loadAiTuningProfiles() {
+        loadProfileDropdowns();
+    }
+
+    function loadAiTuningThresholds() {
+        fetch("/rest/charge_mode_config")
+        .then(response => response.json())
+        .then(data => {
+            const form = document.getElementById("aiTuningThresholdsForm");
+            form.querySelector('[name="c5"]').value = data.c5;
+            form.querySelector('[name="c6"]').value = data.c6;
+            form.querySelector('[name="c13"]').value = data.c13;
+            form.querySelector('[name="c14"]').value = data.c14;
+            document.getElementById("aiCoarseTimeTargetDisplay").value = (data.c13 / 1000).toFixed(1);
+            document.getElementById("aiTotalTimeTargetDisplay").value = (data.c14 / 1000).toFixed(1);
+        })
+        .catch(error => {
+            console.error("Error loading thresholds:", error);
+        });
+    }
+
+    function loadAiTuningHistory() {
+        fetch("/rest/ai_tuning_history")
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById("aiHistoryCount").innerText = data.count + " drops";
+
+            // Show/hide suggestions section
+            const sugSection = document.getElementById("aiSuggestedSection");
+            if (data.has_suggestions && data.suggested) {
+                sugSection.style.display = "block";
+                document.getElementById("aiSugFineKp").innerText = data.suggested.fine_kp.toFixed(2);
+                document.getElementById("aiSugFineKd").innerText = data.suggested.fine_kd.toFixed(2);
+            } else {
+                sugSection.style.display = "none";
+            }
+
+            const tbody = document.getElementById("aiHistoryTableBody");
+            tbody.innerHTML = "";
+
+            if (data.count === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-500">No history yet</td></tr>';
+                return;
+            }
+
+            for (let i = 0; i < data.drops.length; i++) {
+                const drop = data.drops[i];
+                const row = document.createElement("tr");
+                const overthrowClass = drop.overthrow > 0.02 ? 'text-error' : drop.overthrow < -0.02 ? 'text-warning' : 'text-success';
+                row.innerHTML = `
+                    <td>${i + 1}</td>
+                    <td>#${drop.profile}</td>
+                    <td class="${overthrowClass}">${drop.overthrow >= 0 ? '+' : ''}${drop.overthrow.toFixed(3)}g</td>
+                    <td>${(drop.time / 1000).toFixed(1)}s</td>
+                `;
+                tbody.appendChild(row);
+            }
+        })
+        .catch(error => {
+            console.error("Error loading history:", error);
+        });
+    }
+
+    function applyRefinedParams() {
+        const profileIdx = document.getElementById("aiTuningProfileSelect").value;
+        if (!confirm(`Apply refined PID values to profile #${parseInt(profileIdx) + 1}?`)) {
+            return;
+        }
+
+        fetch("/rest/ai_tuning_apply_refined?profile_idx=" + profileIdx)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert("Refined values applied successfully!");
+                loadAiTuningHistory();
+            } else {
+                alert("Error: " + (data.error || "Failed to apply refined values"));
+            }
+        })
+        .catch(error => {
+            console.error("Error applying refined values:", error);
+            alert("Error applying refined values");
+        });
+    }
+
+    function clearAiTuningHistory() {
+        if (!confirm("Clear all ML learning history?")) {
+            return;
+        }
+
+        fetch("/rest/ai_tuning_clear_history")
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadAiTuningHistory();
+            }
+        })
+        .catch(error => {
+            console.error("Error clearing history:", error);
+        });
+    }
+
+    function loadAiConfig() {
+        fetch("/rest/ai_tuning_config")
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById("cfgCoarseKpMin").value = data.coarse_kp_min;
+            document.getElementById("cfgCoarseKpMax").value = data.coarse_kp_max;
+            document.getElementById("cfgCoarseKdMin").value = data.coarse_kd_min;
+            document.getElementById("cfgCoarseKdMax").value = data.coarse_kd_max;
+            document.getElementById("cfgFineKpMin").value = data.fine_kp_min;
+            document.getElementById("cfgFineKpMax").value = data.fine_kp_max;
+            document.getElementById("cfgFineKdMin").value = data.fine_kd_min;
+            document.getElementById("cfgFineKdMax").value = data.fine_kd_max;
+            document.getElementById("cfgNoiseMargin").value = data.noise_margin;
+        })
+        .catch(error => {
+            console.error("Error loading AI config:", error);
+        });
+    }
+
+    function saveAiConfig() {
+        var params = "coarse_kp_min=" + document.getElementById("cfgCoarseKpMin").value
+            + "&coarse_kp_max=" + document.getElementById("cfgCoarseKpMax").value
+            + "&coarse_kd_min=" + document.getElementById("cfgCoarseKdMin").value
+            + "&coarse_kd_max=" + document.getElementById("cfgCoarseKdMax").value
+            + "&fine_kp_min=" + document.getElementById("cfgFineKpMin").value
+            + "&fine_kp_max=" + document.getElementById("cfgFineKpMax").value
+            + "&fine_kd_min=" + document.getElementById("cfgFineKdMin").value
+            + "&fine_kd_max=" + document.getElementById("cfgFineKdMax").value
+            + "&noise_margin=" + document.getElementById("cfgNoiseMargin").value;
+
+        fetch("/rest/ai_tuning_config_set?" + params)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log("AI config saved");
+            }
+        })
+        .catch(error => {
+            console.error("Error saving AI config:", error);
+        });
+    }
+
+    function toggleMlDataCollection() {
+        const enabled = document.getElementById("mlDataEnabled").checked;
+        fetch("/rest/charge_mode_config?c15=" + (enabled ? "true" : "false"))
+        .then(response => response.json())
+        .then(data => {
+            console.log("ML data collection " + (enabled ? "enabled" : "disabled"));
+        })
+        .catch(error => {
+            console.error("Error toggling ML data collection:", error);
+        });
+    }
+
+    function loadMlDataEnabled() {
+        fetch("/rest/charge_mode_config")
+        .then(response => response.json())
+        .then(data => {
+            const toggle = document.getElementById("mlDataEnabled");
+            if (toggle && data.c15 !== undefined) {
+                toggle.checked = (data.c15 === "true" || data.c15 === true);
+            }
+        })
+        .catch(error => {
+            console.error("Error loading ML data setting:", error);
+        });
+    }
+
+    function checkMlSuggestions() {
+        fetch("/rest/ai_tuning_history")
+        .then(response => response.json())
+        .then(data => {
+            const banner = document.getElementById("mlSuggestionsBanner");
+            if (banner && data.has_suggestions) {
+                banner.style.display = "flex";
+            } else if (banner) {
+                banner.style.display = "none";
+            }
+        })
+        .catch(() => {});
+    }
+
     // Start the long polling process when the page loads
     if (document.readyState != "loading") {
+        loadProfileDropdowns();
         onNavButtonClicked('trickler');
     }
     else {
-        document.addEventListener('DOMContentLoaded', function() {onNavButtonClicked('trickler');});
+        document.addEventListener('DOMContentLoaded', function() {
+            loadProfileDropdowns();
+            onNavButtonClicked('trickler');
+        });
     }
+
+    // Fetch firmware version
+    fetch('/rest/system_control').then(r => r.json()).then(d => {
+        const ver = d.s1 || '?.?';
+        if (document.getElementById('navVersion')) document.getElementById('navVersion').textContent = 'v' + ver;
+    }).catch(() => {});
 
 </script>
 

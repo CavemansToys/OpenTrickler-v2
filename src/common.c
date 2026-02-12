@@ -37,19 +37,23 @@ bool string_to_boolean(char * s) {
 }
 
 
-int float_to_string(char * output_decimal_str, float var, decimal_places_t decimal_places) {
+int float_to_string(char * output_decimal_str, size_t buffer_size, float var, decimal_places_t decimal_places) {
     int return_value = 0;
-    
+
+    if (buffer_size == 0) {
+        return 0;
+    }
+
     switch (decimal_places) {
         case DP_2:
-            return_value = sprintf(output_decimal_str, "%0.02f", var);
+            return_value = snprintf(output_decimal_str, buffer_size, "%0.02f", var);
             break;
         case DP_3:
-            return_value = sprintf(output_decimal_str, "%0.03f", var);
+            return_value = snprintf(output_decimal_str, buffer_size, "%0.03f", var);
             break;
         default:
             break;
     }
-    
+
     return return_value;
 }

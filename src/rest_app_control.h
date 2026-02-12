@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 
-void rest_app_control_init(void);
+bool rest_app_control_init(void);
 rest_control_event_t rest_app_control_wait_for_event(bool block);
 
 #ifdef __cplusplus

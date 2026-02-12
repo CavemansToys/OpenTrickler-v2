@@ -6,6 +6,7 @@
 #include "eeprom.h"
 #include "common.h"
 #include "servo_gate.h"
+#include "error.h"
 
 // Attributes
 servo_gate_t servo_gate;
@@ -33,6 +34,9 @@ const char * _gate_state_string[] = {
     "Open"
 };
 const char * gate_state_to_string(gate_state_t state) {
+    if (state >= sizeof(_gate_state_string) / sizeof(_gate_state_string[0])) {
+        return "Unknown";
+    }
     return _gate_state_string[state];
 }
 
@@ -67,10 +71,14 @@ void servo_gate_set_state(gate_state_t state, bool block_wait) {
     // Clear the semaphore state
     xSemaphoreTake(servo_gate.move_ready_semphore, 0);
 
-    xQueueSend(servo_gate.control_queue, &state, portMAX_DELAY);
+    // Use timeout to prevent freeze if queue is full
+    if (xQueueSend(servo_gate.control_queue, &state, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return;
+    }
 
     if (block_wait) {
-        xSemaphoreTake(servo_gate.move_ready_semphore, portMAX_DELAY);
+        // Use timeout - servo should complete within 2 seconds
+        xSemaphoreTake(servo_gate.move_ready_semphore, pdMS_TO_TICKS(2000));
     }
 }
 
@@ -92,7 +100,8 @@ void servo_gate_control_task(void * p) {
                 new_open_ratio = 1.0f;
                 break;
             default:
-                break;
+                // Invalid state - skip processing
+                continue;
         }
 
         // First time
@@ -101,19 +110,30 @@ void servo_gate_control_task(void * p) {
         }
         else {
             float delta = new_open_ratio - prev_open_ratio;
-            float speed = delta < 0 ? servo_gate.eeprom_servo_gate_config.shutter_open_speed_pct_s : 
+            float speed = delta < 0 ? servo_gate.eeprom_servo_gate_config.shutter_open_speed_pct_s :
                                       servo_gate.eeprom_servo_gate_config.shutter_close_speed_pct_s;
+
+            // Prevent division by zero - if speed is 0, skip ramp and jump directly
+            if (speed <= 0.0f) {
+                _servo_gate_set_current_state(new_open_ratio);
+                xSemaphoreGive(servo_gate.move_ready_semphore);
+                prev_open_ratio = new_open_ratio;
+                servo_gate.gate_state = new_state;
+                continue;
+            }
+
             uint32_t ramp_time_us = fabs(delta / speed) * 1e6;
 
             uint32_t start_time = time_us_32();
-            uint32_t stop_time = start_time + ramp_time_us;
             while (true) {
                 uint32_t current_time = time_us_32();
-                if (current_time > stop_time) {
+                // Use elapsed time comparison to handle 32-bit timer wraparound
+                uint32_t elapsed = current_time - start_time;
+                if (elapsed >= ramp_time_us) {
                     break;
                 }
 
-                float percentage = (current_time - start_time) / (float) ramp_time_us;
+                float percentage = elapsed / (float) ramp_time_us;
                 float current_ratio = prev_open_ratio + delta * percentage;
 
                 _servo_gate_set_current_state(current_ratio);
@@ -140,22 +160,24 @@ bool servo_gate_config_save(void) {
 bool servo_gate_config_init() {
     bool is_ok = true;
 
-    // Read charge mode config from EEPROM
+    // Read servo gate config from EEPROM
     memset(&servo_gate, 0x0, sizeof(servo_gate));
     is_ok = eeprom_read(EEPROM_SERVO_GATE_CONFIG_BASE_ADDR, (uint8_t *)&servo_gate.eeprom_servo_gate_config, sizeof(eeprom_servo_gate_config_t));
+
+    bool need_defaults = false;
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_SERVO_GATE_CONFIG_BASE_ADDR);
-        return false;
+        printf("Unable to read from EEPROM at address %x, using defaults\n", EEPROM_SERVO_GATE_CONFIG_BASE_ADDR);
+        need_defaults = true;
+    } else if (servo_gate.eeprom_servo_gate_config.servo_gate_config_rev != EEPROM_SERVO_GATE_CONFIG_REV) {
+        need_defaults = true;
     }
 
-    if (servo_gate.eeprom_servo_gate_config.servo_gate_config_rev != EEPROM_SERVO_GATE_CONFIG_REV) {
+    if (need_defaults) {
         memcpy(&servo_gate.eeprom_servo_gate_config, &default_eeprom_servo_gate_config, sizeof(eeprom_servo_gate_config_t));
 
-        // Write back
-        is_ok = servo_gate_config_save();
-        if (!is_ok) {
+        // Write back (may fail if no EEPROM)
+        if (is_ok && !servo_gate_config_save()) {
             printf("Unable to write to %x\n", EEPROM_SERVO_GATE_CONFIG_BASE_ADDR);
-            return false;
         }
     }
 
@@ -170,14 +192,14 @@ bool servo_gate_config_init() {
         servo_gate.gate_state = GATE_DISABLED;
     }
 
-    return is_ok;
+    return true;
 }
 
 
 bool servo_gate_init() {
-    bool is_ok = true;
-
-    is_ok = servo_gate_config_init();
+    if (!servo_gate_config_init()) {
+        return false;
+    }
 
     // Initialize pins
     gpio_set_function(SERVO0_PWM_PIN, GPIO_FUNC_PWM);
@@ -198,9 +220,18 @@ bool servo_gate_init() {
 
     // Start the RTOS task and queue
     servo_gate.control_queue = xQueueCreate(1, sizeof(gate_state_t));
-    servo_gate.move_ready_semphore = xSemaphoreCreateBinary();
+    if (servo_gate.control_queue == NULL) {
+        report_error(ERR_SERVO_QUEUE_CREATE);
+        return false;
+    }
 
-    xTaskCreate(
+    servo_gate.move_ready_semphore = xSemaphoreCreateBinary();
+    if (servo_gate.move_ready_semphore == NULL) {
+        report_error(ERR_SERVO_SEMAPHORE_CREATE);
+        return false;
+    }
+
+    BaseType_t task_created = xTaskCreate(
         servo_gate_control_task,
         "servo_gate_controller",
         configMINIMAL_STACK_SIZE,
@@ -208,10 +239,14 @@ bool servo_gate_init() {
         8,
         &servo_gate.control_task_handler
     );
+    if (task_created != pdPASS) {
+        report_error(ERR_SERVO_TASK_CREATE);
+        return false;
+    }
 
     // No, we don't set the servo gate state
 
-    return is_ok;
+    return true;
 }
 
 

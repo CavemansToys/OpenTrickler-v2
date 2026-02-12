@@ -7,7 +7,7 @@
 #include "neopixel_led.h"
 
 
-#define EEPROM_CHARGE_MODE_DATA_REV                     8              // 16 byte 
+#define EEPROM_CHARGE_MODE_DATA_REV                     12             // Increment for pulse mode 
 
 #define WEIGHT_STRING_LEN 8
 
@@ -40,6 +40,22 @@ typedef struct {
     rgbw_u32_t neopixel_under_charge_colour;
     rgbw_u32_t neopixel_over_charge_colour;
     rgbw_u32_t neopixel_not_ready_colour;
+
+    // AI Tuning time targets
+    uint32_t coarse_time_target_ms;
+    uint32_t total_time_target_ms;
+
+    // ML data collection (records charge data for learning)
+    bool ml_data_collection_enabled;
+
+    // Auto zero scale when cup is returned
+    bool auto_zero_on_cup_return;
+
+    // Pulse mode - helps with slow scales
+    bool pulse_mode_enabled;
+    float pulse_threshold;          // Start pulsing when error < this (grains)
+    uint32_t pulse_duration_ms;     // Motor on time per pulse
+    uint32_t pulse_wait_ms;         // Wait time between pulses for scale to update
 
 } eeprom_charge_mode_data_t;
 

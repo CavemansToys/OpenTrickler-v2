@@ -8,6 +8,7 @@
 #include "display.h"
 #include "mini_12864_module.h"
 #include "common.h"
+#include "error.h"
 
 
 // Below steps are refering to Section 8-5 of the FX_FZ-i instruction manual
@@ -70,7 +71,11 @@ void scale_calibration_render_task(void *p) {
 uint8_t scale_calibrate_with_external_weight() {
     if (scale_calibration_render_task_handler == NULL) {
         UBaseType_t current_task_priority = uxTaskPriorityGet(xTaskGetCurrentTaskHandle());
-        xTaskCreate(scale_calibration_render_task, "Scale Measurement Render Task", configMINIMAL_STACK_SIZE, NULL, current_task_priority - 1, &scale_calibration_render_task_handler);
+        BaseType_t task_created = xTaskCreate(scale_calibration_render_task, "Scale Measurement Render Task", configMINIMAL_STACK_SIZE, NULL, current_task_priority - 1, &scale_calibration_render_task_handler);
+        if (task_created != pdPASS) {
+            report_error(ERR_CALIBRATE_TASK_CREATE);
+            return 37;  // Return to menu
+        }
     }
     else {
         vTaskResume(scale_calibration_render_task_handler);
@@ -80,16 +85,16 @@ uint8_t scale_calibrate_with_external_weight() {
 
     // Step 1: Enter CAL mode by pressing CAL key
     // Displays CAL 0
-    strcpy(title_string, "Step 1");
-    strcpy(line1, "Wait 3s");
+    snprintf(title_string, sizeof(title_string), "Step 1");
+    snprintf(line1, sizeof(line1), "Wait 3s");
     memset(line2, 0x0, sizeof(line2));
     scale_press_cal_key();
     delay_ms(3000, scheduler_state);  // Wait for 3 seconds
 
     // Step 2a: Confirm the weight (assume it was calibrated before) and measure Zero
-    strcpy(title_string, "Step 2");
-    strcpy(line1, "Confirm pan is empty");
-    strcpy(line2, "Press Next to continue");
+    snprintf(title_string, sizeof(title_string), "Step 2");
+    snprintf(line1, sizeof(line1), "Confirm pan is empty");
+    snprintf(line2, sizeof(line2), "Press Next to continue");
     show_next_key = true;
     while (button_wait_for_input(true) != BUTTON_ENCODER_PRESSED) {
         ;
@@ -98,14 +103,14 @@ uint8_t scale_calibrate_with_external_weight() {
     scale_press_print_key();
 
     // Step 2b update screen and prompt to wait
-    strcpy(line1, "Wait 5s");
+    snprintf(line1, sizeof(line1), "Wait 5s");
     memset(line2, 0x0, sizeof(line2));
     delay_ms(5000, scheduler_state);  // Wait for 10 seconds
 
     // Step 3a: Place the specified weight to the scale, wait for input
-    strcpy(title_string, "Step 3");
-    strcpy(line1, "Place displayed weight");
-    strcpy(line2, "Press Next to continue");
+    snprintf(title_string, sizeof(title_string), "Step 3");
+    snprintf(line1, sizeof(line1), "Place displayed weight");
+    snprintf(line2, sizeof(line2), "Press Next to continue");
 
     show_next_key = true;
     while (button_wait_for_input(true) != BUTTON_ENCODER_PRESSED) {
@@ -115,13 +120,13 @@ uint8_t scale_calibrate_with_external_weight() {
     scale_press_print_key();
 
     // Step 3b update screen and prompt to wait
-    strcpy(line1, "Wait 5s");
+    snprintf(line1, sizeof(line1), "Wait 5s");
     memset(line2, 0x0, sizeof(line2));
     delay_ms(5000, scheduler_state);  // Wait for 10 seconds
 
-    strcpy(title_string, "Step 4");
-    strcpy(line1, "Remove the weight");
-    strcpy(line2, "Press Next to continue");
+    snprintf(title_string, sizeof(title_string), "Step 4");
+    snprintf(line1, sizeof(line1), "Remove the weight");
+    snprintf(line2, sizeof(line2), "Press Next to continue");
 
     show_next_key = true;
     while (button_wait_for_input(true) != BUTTON_ENCODER_PRESSED) {
@@ -130,9 +135,9 @@ uint8_t scale_calibrate_with_external_weight() {
     show_next_key = false;
 
     // Step 5 calibration done
-    strcpy(title_string, "Calibration done");
-    strcpy(line1, "Return to main menu in");
-    strcpy(line2, "3 seconds");
+    snprintf(title_string, sizeof(title_string), "Calibration done");
+    snprintf(line1, sizeof(line1), "Return to main menu in");
+    snprintf(line2, sizeof(line2), "3 seconds");
 
     delay_ms(3000, scheduler_state);  // Wait for 3 seconds
     

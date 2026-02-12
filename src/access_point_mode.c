@@ -28,13 +28,9 @@ extern char second_line_buffer[32];
 
 
 bool access_point_mode_start() {
-    char ap_ssid[17] = "";
-    char ap_password[] = "opentrickler";
-    char id[4];
+    const char *ap_ssid = "OpenTrickler";
+    const char *ap_password = "opentrickler";
 
-    eeprom_get_board_id((char **) &id, sizeof(id));
-    memset(ap_ssid, 0x0, sizeof(ap_ssid));
-    snprintf(ap_ssid, sizeof(ap_ssid), "OpenTrickler%s", id);
     cyw43_arch_enable_ap_mode(ap_ssid, ap_password, CYW43_AUTH_WPA2_AES_PSK);
 
     // Initialize IP
@@ -45,11 +41,10 @@ bool access_point_mode_start() {
     dhcp_server_init(&dhcp_server, &gw, &mask);
 
     // Start the dns server
-    dns_server_t dns_server;
     dns_server_init(&dns_server, &gw);
 
-    sprintf(first_line_buffer, ">%s", ap_ssid);
-    sprintf(second_line_buffer, ">%s", ap_password);
+    snprintf(first_line_buffer, sizeof(first_line_buffer), ">%s", ap_ssid);
+    snprintf(second_line_buffer, sizeof(second_line_buffer), ">%s", ap_password);
 
     return true;
 }
@@ -58,6 +53,7 @@ bool access_point_mode_start() {
 bool access_point_mode_stop() {
     dhcp_server_deinit(&dhcp_server);
     dns_server_deinit(&dns_server);
+    cyw43_arch_disable_ap_mode();
 
     memset(first_line_buffer, 0x0, sizeof(first_line_buffer));
     memset(second_line_buffer, 0x0, sizeof(second_line_buffer));

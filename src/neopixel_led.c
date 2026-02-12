@@ -26,7 +26,7 @@
 #include <string.h>
 
 #include "neopixel_led.h"
-#include "generated/ws2812.pio.h"
+#include "ws2812.pio.h"
 #include "configuration.h"
 #include "eeprom.h"
 #include "common.h"
@@ -45,7 +45,7 @@ neopixel_led_config_t neopixel_led_config;
 
 uint32_t urgbw_u32(rgbw_u32_t colour, neopixel_colour_order_t colour_order) {
 
-    uint32_t output;
+    uint32_t output = 0;
 
     if (colour_order == NEOPIXEL_COLOUR_ORDER_GRB) {
         output = ((uint32_t) (colour.g) << 8) |
@@ -82,10 +82,10 @@ void _neopixel_pwm_out_set_colour(uint32_t new_colour) {
 
 
 void neopixel_led_set_colour(rgbw_u32_t mini12864_backlight_colour, rgbw_u32_t led1_colour, rgbw_u32_t led2_colour, bool block_wait) {
-    // Assign delay time
+    // Assign delay time - use 500ms max instead of infinite wait
     TickType_t ticks_to_wait = 0;
     if (block_wait) {
-        ticks_to_wait = portMAX_DELAY;
+        ticks_to_wait = pdMS_TO_TICKS(500);
     }
     // Wait for the mutex
     if (xSemaphoreTake(neopixel_led_config.mutex, ticks_to_wait) != pdTRUE) {
@@ -122,13 +122,16 @@ bool neopixel_led_init(void) {
     memset(&neopixel_led_config, 0x0, sizeof(neopixel_led_config));
 
     is_ok = eeprom_read(EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR, (uint8_t *) &neopixel_led_config.eeprom_neopixel_led_metadata, sizeof(eeprom_neopixel_led_metadata_t));
+
+    bool need_defaults = false;
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR);
-        return false;
+        printf("Unable to read from EEPROM at address %x, using defaults\n", EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR);
+        need_defaults = true;
+    } else if (neopixel_led_config.eeprom_neopixel_led_metadata.neopixel_data_rev != EEPROM_NEOPIXEL_LED_METADATA_REV) {
+        need_defaults = true;
     }
 
-    // If the revision doesn't match then re-initialize the config
-    if (neopixel_led_config.eeprom_neopixel_led_metadata.neopixel_data_rev != EEPROM_NEOPIXEL_LED_METADATA_REV) {
+    if (need_defaults) {
         neopixel_led_config.eeprom_neopixel_led_metadata.neopixel_data_rev = EEPROM_NEOPIXEL_LED_METADATA_REV;
 
         // Default to white
@@ -145,11 +148,9 @@ bool neopixel_led_init(void) {
         // Default to RGB colour order
         neopixel_led_config.eeprom_neopixel_led_metadata.pwm_out_led_colour_order = NEOPIXEL_COLOUR_ORDER_RGB;
 
-        // Write data back
-        is_ok = neopixel_led_config_save();
-        if (!is_ok) {
+        // Write data back (may fail if no EEPROM)
+        if (is_ok && !neopixel_led_config_save()) {
             printf("Unable to write to %x\n", EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR);
-            return false;
         }
     }
 
@@ -248,6 +249,20 @@ bool http_rest_neopixel_led_config(struct fs_file *file, int num_params, char *p
     static char neopixel_config_json_buffer[256];
     bool save_to_eeprom = false;
 
+    // Take mutex to protect config modification from concurrent access
+    if (neopixel_led_config.mutex != NULL) {
+        if (xSemaphoreTake(neopixel_led_config.mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+            // Return error response if mutex busy
+            snprintf(neopixel_config_json_buffer, sizeof(neopixel_config_json_buffer),
+                     "%s{\"error\":\"busy\"}", http_json_header);
+            file->data = neopixel_config_json_buffer;
+            file->len = strlen(neopixel_config_json_buffer);
+            file->index = file->len;
+            file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
+            return true;
+        }
+    }
+
     // Control
     for (int idx = 0; idx < num_params; idx += 1) {
         if (strcmp(params[idx], "bl") == 0) {
@@ -280,7 +295,7 @@ bool http_rest_neopixel_led_config(struct fs_file *file, int num_params, char *p
     }
 
     // Response
-    snprintf(neopixel_config_json_buffer, 
+    snprintf(neopixel_config_json_buffer,
              sizeof(neopixel_config_json_buffer),
              "%s"
              "{\"bl\":\"#%06lx\",\"l1\":\"#%06lx\",\"l2\":\"#%06lx\",\"l3\":%d,\"l4\":%s,\"l5\":%d}",
@@ -292,19 +307,25 @@ bool http_rest_neopixel_led_config(struct fs_file *file, int num_params, char *p
              boolean_to_string(neopixel_led_config.eeprom_neopixel_led_metadata.pwm_out_led_is_rgbw),
              neopixel_led_config.eeprom_neopixel_led_metadata.pwm_out_led_colour_order
     );
+
+    // Capture colours before releasing mutex
+    rgbw_u32_t backlight = neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.mini12864_backlight_colour;
+    rgbw_u32_t led1 = neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.led1_colour;
+    rgbw_u32_t led2 = neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.led2_colour;
+
+    // Release mutex before calling neopixel_led_set_colour which takes the same mutex
+    if (neopixel_led_config.mutex != NULL) {
+        xSemaphoreGive(neopixel_led_config.mutex);
+    }
+
     size_t data_length = strlen(neopixel_config_json_buffer);
     file->data = neopixel_config_json_buffer;
     file->len = data_length;
     file->index = data_length;
     file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
 
-    // Update new colour
-    neopixel_led_set_colour(
-        neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.mini12864_backlight_colour,
-        neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.led1_colour,
-        neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.led2_colour,
-        true  // block wait
-    );
+    // Update new colour (this takes the mutex internally)
+    neopixel_led_set_colour(backlight, led1, led2, true);
 
     return true;
 }

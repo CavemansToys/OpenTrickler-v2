@@ -1,5 +1,11 @@
 #include "FloatRingBuffer.h"
 #include "math.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+extern "C" {
+#include "error.h"
+}
 
 // TODO: Integrate CMSIS DSP for core algorithm
 
@@ -35,15 +41,18 @@ float FloatRingBuffer::getMean(void){
 
 
 FloatRingBuffer::FloatRingBuffer(const size_t size)
-    :buffer_size(size)
+    :buffer_size(size > 0 ? size : 1)  // Ensure minimum size of 1 to prevent division by zero
 {
     reset();
-    
+
     // container
     // data = new T[buffer_size];
-    
+
     // use c styled memory allocation instead
-    data = (float *)malloc(buffer_size * sizeof(float));
+    data = (float *)calloc(buffer_size, sizeof(float));
+    if (data == NULL) {
+        report_error(ERR_MEMORY_ALLOC);
+    }
 }
 
 FloatRingBuffer::~FloatRingBuffer()
@@ -135,7 +144,7 @@ float FloatRingBuffer::first()
 
 float FloatRingBuffer::last()
 {
-    return data[write_ptr];
+    return data[(write_ptr - 1 + buffer_size) % buffer_size];
 }
 
 float FloatRingBuffer::operator[](size_t idx)

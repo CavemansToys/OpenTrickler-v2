@@ -177,7 +177,7 @@ static char httpd_req_buf[LWIP_HTTPD_MAX_REQ_LENGTH + 1];
 #if LWIP_HTTPD_URI_BUF_LEN
 /* Filename for response file to send when POST is finished or
  * search for default files when a directory is requested. */
-// static char http_uri_buf[LWIP_HTTPD_URI_BUF_LEN + 1];
+static char http_uri_buf[LWIP_HTTPD_URI_BUF_LEN + 1] __attribute__((unused));
 #endif
 
 #if LWIP_HTTPD_DYNAMIC_HEADERS
@@ -2776,8 +2776,6 @@ http_set_cgi_handlers(const tCGI *cgis, int num_handlers)
 //   Open Trickler Modified Code   //
 // //////////////////////////////////
 
-#include "eeprom.h"
-
 typedef struct _rest_endpoint_node{
     char * uri;
     rest_handler_t function_handler;
@@ -2789,7 +2787,16 @@ static _rest_endpoint_node_t * rest_endpoint_head = NULL;
 
 void rest_register_handler(char * uri, rest_handler_t f) {
     _rest_endpoint_node_t * new_node = malloc(sizeof(_rest_endpoint_node_t));
+    if (new_node == NULL) {
+        printf("rest_register_handler: malloc failed for '%s'\n", uri);
+        return;
+    }
     new_node->uri = strdup(uri);
+    if (new_node->uri == NULL) {
+        printf("rest_register_handler: strdup failed for '%s'\n", uri);
+        free(new_node);
+        return;
+    }
     new_node->function_handler = f;
 
     // Add to the head
@@ -2814,9 +2821,10 @@ rest_handler_t rest_get_handler(const char *uri) {
 
   Reference: https://stackoverflow.com/a/14530993
 */
-void decode_uri(char * dst, const char * src) {
+void decode_uri(char * dst, const char * src, size_t dst_size) {
     char a, b;
-    while (*src) {
+    char *dst_end = dst + dst_size - 1;  // Reserve space for null terminator
+    while (*src && dst < dst_end) {
         if ((*src == '%') &&
             ((a = src[1]) && (b = src[2])) &&
             (isxdigit(a) && isxdigit(b))) {
@@ -2832,7 +2840,12 @@ void decode_uri(char * dst, const char * src) {
                       b -= ('A' - 10);
                 else
                       b -= '0';
-                *dst++ = 16*a+b;
+                char decoded_char = 16*a+b;
+                if (decoded_char == 0) {
+                    // Reject NUL byte injection
+                    break;
+                }
+                *dst++ = decoded_char;
                 src+=3;
         } else if (*src == '+') {
             *dst++ = ' ';
@@ -2841,7 +2854,7 @@ void decode_uri(char * dst, const char * src) {
             *dst++ = *src++;
         }
     }
-    *dst++ = '\0';
+    *dst = '\0';
 }
 
 
@@ -2849,11 +2862,12 @@ static err_t http_find_file(struct http_state * hs, const char * uri, int is_09)
     struct fs_file * file = NULL;
     char * params = NULL;
 
-    // The decoded URI will be fed to the parameter and REST handler loopup
-    // decoded_uri will be within the scope of `http_find_file` exclusively
-    char decoded_uri[strlen(uri) + 1];
+    // The decoded URI will be fed to the parameter and REST handler lookup
+    // Use a fixed-size static buffer to avoid VLA stack overflow on the TCPIP thread
+    #define MAX_DECODED_URI_LEN 256
+    static char decoded_uri[MAX_DECODED_URI_LEN];
     memset(decoded_uri, 0x0, sizeof(decoded_uri));
-    decode_uri(decoded_uri, uri);
+    decode_uri(decoded_uri, uri, sizeof(decoded_uri));
 
     // First, isolate the base URI (without any parameters)
     params = (char *) strchr(decoded_uri, '?');
@@ -2863,8 +2877,16 @@ static err_t http_find_file(struct http_state * hs, const char * uri, int is_09)
         params += 1;
     }
 
+    printf("HTTP request: '%s'\n", decoded_uri);
+
     // Look for handler
     rest_handler_t rest_handler = rest_get_handler(decoded_uri);
+
+    if (rest_handler) {
+        printf("Handler found for '%s'\n", decoded_uri);
+    } else {
+        printf("No handler for '%s' - returning 404\n", decoded_uri);
+    }
 
     if (rest_handler) {
         // Extract parameters from the uri
@@ -2876,12 +2898,13 @@ static err_t http_find_file(struct http_state * hs, const char * uri, int is_09)
 
     if (file == NULL) {
         rest_handler = rest_get_handler("/404");
-        LWIP_ASSERT("Missing 404 handler", file == NULL);
+        LWIP_ASSERT("Missing 404 handler", rest_handler != NULL);
 
-        rest_handler(&hs->file_handle, http_cgi_paramcount, hs->params, hs->param_vals);
+        if (rest_handler != NULL) {
+            rest_handler(&hs->file_handle, 0, NULL, NULL);
+        }
 
         file = &hs->file_handle;
-
     }
 
     uint8_t tag_check = 0;
@@ -2897,6 +2920,9 @@ fs_open(struct fs_file *file, const char *name) {
 int
 fs_bytes_left(struct fs_file *file)
 {
+  if (file->index > file->len) {
+    return 0;
+  }
   return file->len - file->index;
 }
 
@@ -2905,7 +2931,7 @@ void
 fs_close(struct fs_file *file)
 {
 #if LWIP_HTTPD_CUSTOM_FILES
-  if (file->is_custom_file) {
+  if (file->flags & FS_FILE_FLAGS_CUSTOM) {
     fs_close_custom(file);
   }
 #endif /* LWIP_HTTPD_CUSTOM_FILES */
@@ -2914,3 +2940,5 @@ fs_close(struct fs_file *file)
 #endif /* #if LWIP_HTTPD_FILE_STATE */
   LWIP_UNUSED_ARG(file);
 }
+
+

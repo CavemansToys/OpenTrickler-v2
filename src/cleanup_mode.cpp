@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "app.h"
+#include "app_state.h"
 #include "u8g2.h"
 #include "mini_12864_module.h"
 #include "motors.h"
@@ -14,6 +15,7 @@
 #include "charge_mode.h"
 #include "cleanup_mode.h"
 #include "servo_gate.h"
+#include "hardware/watchdog.h"
 
 
 // Memory from other modules
@@ -21,7 +23,6 @@ extern QueueHandle_t encoder_event_queue;
 extern charge_mode_config_t charge_mode_config;
 extern servo_gate_t servo_gate;
 extern AppState_t exit_state;
-extern QueueHandle_t encoder_event_queue;
 
 // Internal
 cleanup_mode_config_t cleanup_mode_config;
@@ -40,6 +41,8 @@ void cleanup_render_task(void *p) {
     while (true) {
         TickType_t last_render_tick = xTaskGetTickCount();
 
+        acquire_display_buffer_access();
+
         u8g2_ClearBuffer(display_handler);
 
         // Draw title
@@ -54,12 +57,12 @@ void cleanup_render_task(void *p) {
         // Draw charge weight
         float current_weight = scale_get_current_measurement();
         memset(buf, 0x0, sizeof(buf));
-        
+
         // Convert to weight string with given decimal places
         char weight_string[WEIGHT_STRING_LEN];
-        float_to_string(weight_string, current_weight, charge_mode_config.eeprom_charge_mode_data.decimal_places);
+        float_to_string(weight_string, sizeof(weight_string), current_weight, charge_mode_config.eeprom_charge_mode_data.decimal_places);
 
-        sprintf(buf, "Weight: %s", weight_string);
+        snprintf(buf, sizeof(buf), "Weight: %s", weight_string);
         u8g2_SetFont(display_handler, u8g2_font_profont11_tf);
         u8g2_DrawStr(display_handler, 5, 25, buf);
 
@@ -69,22 +72,24 @@ void cleanup_render_task(void *p) {
         float flow_rate = weight_diff / 0.02;  // 20 ms per sampling period, see below
 
         memset(buf, 0x0, sizeof(buf));
-        sprintf(buf, "Flow: %0.3f/s", flow_rate);
+        snprintf(buf, sizeof(buf), "Flow: %0.3f/s", flow_rate);
         u8g2_SetFont(display_handler, u8g2_font_profont11_tf);
         u8g2_DrawStr(display_handler, 5, 35, buf);
 
         // Draw current motor speed
         memset(buf, 0x0, sizeof(buf));
-        sprintf(buf, "Speed: %0.3f", cleanup_mode_config.trickler_speed);
+        snprintf(buf, sizeof(buf), "Speed: %0.3f", cleanup_mode_config.trickler_speed);
         u8g2_SetFont(display_handler, u8g2_font_profont11_tf);
         u8g2_DrawStr(display_handler, 5, 45, buf);
 
         memset(buf, 0x0, sizeof(buf));
-        sprintf(buf, "Servo Gate: %s", gate_state_to_string(servo_gate.gate_state));
+        snprintf(buf, sizeof(buf), "Servo Gate: %s", gate_state_to_string(servo_gate.gate_state));
         u8g2_SetFont(display_handler, u8g2_font_profont11_tf);
         u8g2_DrawStr(display_handler, 5, 55, buf);
 
         u8g2_SendBuffer(display_handler);
+
+        release_display_buffer_access();
 
         vTaskDelayUntil(&last_render_tick, pdMS_TO_TICKS(20));
     }
@@ -92,6 +97,10 @@ void cleanup_render_task(void *p) {
 
 
 uint8_t cleanup_mode_menu() {
+    // Initialize the cleanup mode config before resuming the render task
+    // (render task reads cleanup_mode_config, so it must be initialized first)
+    memset(&cleanup_mode_config, 0x0, sizeof(cleanup_mode_config));
+
     // If the display task is never created then we shall create one, otherwise we shall resume the task
     if (cleanup_render_task_handler == NULL) {
         // The render task shall have lower priority than the current one
@@ -101,9 +110,6 @@ uint8_t cleanup_mode_menu() {
     else {
         vTaskResume(cleanup_render_task_handler);
     }
-
-    // Initialize the cleanup mode config
-    memset(&cleanup_mode_config, 0x0, sizeof(cleanup_mode_config));
 
     // Enter the clean up mode
     cleanup_mode_config.cleanup_mode_state = CLEANUP_MODE_ENTER;
@@ -139,6 +145,9 @@ uint8_t cleanup_mode_menu() {
                 break;
             case BUTTON_ENCODER_ROTATE_CCW:
                 cleanup_mode_config.trickler_speed -= 1;
+                if (cleanup_mode_config.trickler_speed < 0.0f) {
+                    cleanup_mode_config.trickler_speed = 0.0f;
+                }
                 motor_set_speed(SELECT_BOTH_MOTOR, cleanup_mode_config.trickler_speed);
                 break;
 
@@ -156,9 +165,15 @@ uint8_t cleanup_mode_menu() {
     motor_enable(SELECT_COARSE_TRICKLER_MOTOR, false);
     motor_enable(SELECT_FINE_TRICKLER_MOTOR, false);
 
+    // Close servo gate on exit (if it was opened on entry)
+    if (servo_gate.gate_state == GATE_OPEN) {
+        servo_gate_set_state(GATE_CLOSE, true);
+    }
+
     cleanup_mode_config.cleanup_mode_state = CLEANUP_MODE_EXIT;
 
     vTaskSuspend(cleanup_render_task_handler);
+
     return 1;  // Return backs to the main menu view
 }
 

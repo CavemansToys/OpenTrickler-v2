@@ -12,6 +12,7 @@
 
 #include "dnsserver.h"
 #include "lwip/udp.h"
+#include "error.h"
 
 #define PORT_DNS_SERVER 53
 #define DUMP_DATA 0
@@ -51,8 +52,9 @@ static int dns_socket_bind(struct udp_pcb **udp, uint32_t ip, uint16_t port) {
     IP4_ADDR(&addr, ip >> 24 & 0xff, ip >> 16 & 0xff, ip >> 8 & 0xff, ip & 0xff);
     err_t err = udp_bind(*udp, &addr, port);
     if (err != ERR_OK) {
-        ERROR_printf("dns failed to bind to port %u: %d", port, err);
-        assert(false);
+        ERROR_printf("dns failed to bind to port %u: %d\n", port, err);
+        report_error(ERR_WIFI_DNS_BIND_FAIL);
+        // Don't crash - DNS captive portal won't work but device continues
     }
     return err;
 }
@@ -166,6 +168,9 @@ static void dns_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p, 
             }
             DEBUG_printf("%.*s", label_len, question_ptr);
             question_ptr += label_len;
+            if (question_ptr > question_ptr_end) {
+                goto ignore_request;
+            }
         }
     }
     DEBUG_printf("\n");
@@ -181,8 +186,12 @@ static void dns_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p, 
 
     // Generate answer
     uint8_t *answer_ptr = dns_msg + (question_ptr - dns_msg);
+    // Verify answer section fits within buffer (need 16 bytes for answer)
+    if ((answer_ptr - dns_msg) + 16 > MAX_DNS_MSG_SIZE) {
+        goto ignore_request;
+    }
     *answer_ptr++ = 0xc0; // pointer
-    *answer_ptr++ = question_ptr_start - dns_msg; // pointer to question
+    *answer_ptr++ = (uint8_t)(question_ptr_start - dns_msg); // pointer to question
     
     *answer_ptr++ = 0;
     *answer_ptr++ = 1; // host address
@@ -202,7 +211,7 @@ static void dns_server_process(void *arg, struct udp_pcb *upcb, struct pbuf *p, 
 
     dns_hdr->flags = lwip_htons(
                 0x1 << 15 | // QR = response
-                0x1 << 10 | // AA = authoritive
+                0x1 << 10 | // AA = authoritative
                 0x1 << 7);   // RA = authenticated
     dns_hdr->question_count = lwip_htons(1);
     dns_hdr->answer_record_count = lwip_htons(1);

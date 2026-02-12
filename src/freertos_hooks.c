@@ -1,7 +1,10 @@
 #include <FreeRTOS.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <task.h>
+
+#include "error.h"
 
 
 void vApplicationMallocFailedHook( void )
@@ -12,6 +15,11 @@ void vApplicationMallocFailedHook( void )
     timers, and semaphores.  The size of the FreeRTOS heap is set by the
     configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h. */
 
+    /* Report error before crashing - will show in web interface and serial */
+    size_t free_heap = xPortGetFreeHeapSize();
+    printf("MALLOC FAILED! Free heap: %u bytes\n", (unsigned int)free_heap);
+    report_error(ERR_MEMORY_MALLOC_FAILED);
+
     /* Force an assert. */
     configASSERT( ( volatile void * ) NULL );
 }
@@ -19,12 +27,15 @@ void vApplicationMallocFailedHook( void )
 
 void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName )
 {
-    ( void ) pcTaskName;
     ( void ) pxTask;
 
     /* Run time stack overflow checking is performed if
     configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2.  This hook
     function is called if a stack overflow is detected. */
+
+    /* Report error before crashing - will show in web interface and serial */
+    printf("STACK OVERFLOW in task: %s\n", pcTaskName ? pcTaskName : "unknown");
+    report_error(ERR_MEMORY_STACK_OVERFLOW);
 
     /* Force an assert. */
     configASSERT( ( volatile void * ) NULL );

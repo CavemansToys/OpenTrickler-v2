@@ -206,6 +206,30 @@ uint8_t render_servo_gate_state_with_action(mui_t *ui, uint8_t msg) {
     return return_value;
 }
 
+// ML data collection toggle - saves to EEPROM on change
+static uint8_t ml_data_enabled_u8 = 1;  // Mirror of bool for MUI
+
+uint8_t render_ml_data_toggle(mui_t *ui, uint8_t msg) {
+    // Sync from config on form enter
+    if (msg == MUIF_MSG_FORM_START) {
+        ml_data_enabled_u8 = charge_mode_config.eeprom_charge_mode_data.ml_data_collection_enabled ? 1 : 0;
+    }
+
+    uint8_t return_value = mui_u8g2_u8_radio_wm_pi(ui, msg);
+
+    switch(msg) {
+        case MUIF_MSG_CURSOR_SELECT:
+        {
+            // Update config and save
+            charge_mode_config.eeprom_charge_mode_data.ml_data_collection_enabled = (ml_data_enabled_u8 != 0);
+            charge_mode_config_save();
+            break;
+        }
+    }
+
+    return return_value;
+}
+
 
 
 muif_t muif_list[] = {
@@ -249,6 +273,9 @@ muif_t muif_list[] = {
 
         // Render servo gate state
         MUIF_VARIABLE("RB",&servo_gate.gate_state, render_servo_gate_state_with_action),
+
+        // ML data collection toggle
+        MUIF_VARIABLE("ML", &ml_data_enabled_u8, render_ml_data_toggle),
 
         // input for a number between 0 to 9 //
         MUIF_U8G2_U8_MIN_MAX("N4", &charge_weight_digits[4], 0, 9, mui_u8g2_u8_min_max_wm_mud_pi),
@@ -376,18 +403,19 @@ fds_t fds_data[] = {
     MUI_XY("HL", 0,13)
 
     MUI_STYLE(0)
-    MUI_DATA("MU", 
+    MUI_DATA("MU",
         MUI_31 "Scale|"
         MUI_32 "Profile Manager|"
         MUI_37 "EEPROM|"
         MUI_39 "Servo Gate|"
+        MUI_45 "ML Data|"
         MUI_35 "Reboot|"
         MUI_36 "Version|"
         MUI_1 "<-Return"  // Back to main menu
         )
-    MUI_XYA("GC", 5, 25, 0) 
-    MUI_XYA("GC", 5, 37, 1) 
-    MUI_XYA("GC", 5, 49, 2) 
+    MUI_XYA("GC", 5, 25, 0)
+    MUI_XYA("GC", 5, 37, 1)
+    MUI_XYA("GC", 5, 49, 2)
     MUI_XYA("GC", 5, 61, 3)
 
     // Menu 31: Scale (main menu)
@@ -510,6 +538,18 @@ fds_t fds_data[] = {
     MUI_XYAT("RB", 5, 49, 2, "Open")
     MUI_XYAT("BN", 64, 59, 30, " OK ")  // Jump to form 30
 
+    // ML Data Collection submenu
+    MUI_FORM(45)
+    MUI_STYLE(1)
+    MUI_LABEL(5,10, "ML Data Collection")
+    MUI_XY("HL", 0,13)
+
+    MUI_STYLE(0)
+    MUI_LABEL(5, 25, "Record charge data:")
+    MUI_XYAT("ML", 5, 37, 0, "Disable")
+    MUI_XYAT("ML", 5, 49, 1, "Enable")
+    MUI_XYAT("BN", 64, 59, 30, " OK ")  // Jump to form 30
+
     // Wirelss submenu
     MUI_FORM(40)
     MUI_STYLE(1)
@@ -561,7 +601,7 @@ fds_t fds_data[] = {
 
     MUI_STYLE(0)
     MUI_LABEL(5,25, "Driver:")
-    MUI_XYAT("SD", 50, 25, 60, "A&D FX-i Std|Steinberg SBS|G&G JJB|US Solid JFDBS|JM Science|Creedmoor|Radwag PS R2|Sartorius|Generic")
+    MUI_XYAT("SD", 50, 25, 60, "A&D FX-i/FZ-i|Steinberg SBS|G&G JJB|US Solid JFDBS|JM Science|Creedmoor|Radwag PS R2")
 
     MUI_LABEL(5,37, "Baudrate:")
     MUI_XYAT("BR", 50, 37, 60, "4800|9600|19200")

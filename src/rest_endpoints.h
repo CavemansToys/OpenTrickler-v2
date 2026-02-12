@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 
-bool rest_endpoints_init(bool default_wizard);
+bool rest_endpoints_init(bool connected_to_home);
 
 
 

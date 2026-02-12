@@ -9,6 +9,9 @@ extern "C" {
 #endif
 
 u8g2_t *get_display_handler(void);
+void acquire_display_buffer_access(void);
+void release_display_buffer_access(void);
+bool display_mutex_init(void);
 
 // REST
 bool http_get_display_buffer(struct fs_file *file, int num_params, char *params[], char *values[]);

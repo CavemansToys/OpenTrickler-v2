@@ -1,5 +1,8 @@
 #include <string.h>
 
+#include <FreeRTOS.h>
+#include <task.h>
+
 #include "hardware/watchdog.h"
 
 #include "system_control.h"
@@ -11,9 +14,10 @@ extern eeprom_metadata_t metadata;
 
 
 int software_reboot() {
+    vTaskDelay(pdMS_TO_TICKS(100));  // Grace period for pending I/O
     watchdog_reboot(0, 0, 0);
 
-    return 0;
+    return 0;  // Never reached
 }
 
 
@@ -54,26 +58,27 @@ bool http_rest_system_control(struct fs_file *file, int num_params, char *params
         eeprom_erase(software_reset_flag);
     }
 
-    if (software_reset_flag) {
-        software_reboot();
-    }
-
-    // Response
-    snprintf(eeprom_config_json_buffer, 
+    // Compose the response BEFORE a potential reboot so the client gets a reply
+    // Fix 7: s5 = software_reset, s6 = erase_eeprom (was previously swapped)
+    snprintf(eeprom_config_json_buffer,
              sizeof(eeprom_config_json_buffer),
              "%s"
-             "{\"s0\":\"%s\",\"s1\":\"%s\",\"s2\":\"%s\",\"s3\":\"%s\",\"s4\":%s,\"s5\":%s,\"s6\":%s}", 
+             "{\"s0\":\"%s\",\"s1\":\"%s\",\"s2\":\"%s\",\"s3\":\"%s\",\"s4\":%s,\"s5\":%s,\"s6\":%s}",
              http_json_header,
              metadata.unique_id, version_string, vcs_hash, build_type,
              boolean_to_string(save_to_eeprom_flag),
-             boolean_to_string(erase_eeprom_flag),
-             boolean_to_string(software_reset_flag));
+             boolean_to_string(software_reset_flag),
+             boolean_to_string(erase_eeprom_flag));
 
     size_t data_length = strlen(eeprom_config_json_buffer);
     file->data = eeprom_config_json_buffer;
     file->len = data_length;
     file->index = data_length;
     file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
+
+    if (software_reset_flag) {
+        software_reboot();
+    }
 
     return true;
 }

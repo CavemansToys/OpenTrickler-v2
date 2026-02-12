@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <title>OpenTrickler</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="styles.css" rel="stylesheet" type="text/css" />
+    <link rel="icon" href="/favicon.ico">
+</head>
+<body class="bg-base-200 min-h-screen">
+    <header class="navbar bg-neutral text-neutral-content justify-center mb-4">
+        <h1 class="text-xl font-semibold">OpenTrickler</h1>
+    </header>
+
+    <div class="container mx-auto max-w-xl px-4">
+        <!-- WiFi Status -->
+        <div class="card bg-base-100 shadow-md mb-4">
+            <div class="card-body">
+                <h2 class="card-title text-base border-b border-base-300 pb-3 mb-4">WiFi Status</h2>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center p-3 bg-base-200 rounded-lg">
+                        <span class="text-base-content/70">Status</span>
+                        <span id="wifiStatus" class="font-semibold">--</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-base-200 rounded-lg">
+                        <span class="text-base-content/70">SSID</span>
+                        <span id="wifiSsid" class="font-semibold">--</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-base-200 rounded-lg">
+                        <span class="text-base-content/70">IP Address</span>
+                        <span id="wifiIp" class="font-semibold">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- WiFi Configuration -->
+        <div class="card bg-base-100 shadow-md mb-4">
+            <div class="card-body">
+                <h2 class="card-title text-base border-b border-base-300 pb-3 mb-4">WiFi Configuration</h2>
+                <form id="wifiForm">
+                    <div class="form-control mb-4">
+                        <label class="label" for="ssid">
+                            <span class="label-text">SSID</span>
+                        </label>
+                        <input type="text" id="ssid" name="w0" maxlength="32" placeholder="Network name" class="input input-bordered w-full">
+                    </div>
+
+                    <div class="form-control mb-4">
+                        <label class="label" for="password">
+                            <span class="label-text">Password</span>
+                        </label>
+                        <input type="password" id="password" name="w1" maxlength="63" placeholder="Network password" class="input input-bordered w-full">
+                    </div>
+
+                    <div class="form-control mb-4">
+                        <label class="label" for="authMethod">
+                            <span class="label-text">Authentication</span>
+                        </label>
+                        <select id="authMethod" name="w2" class="select select-bordered w-full">
+                            <option value="0">None</option>
+                            <option value="1">WPA-TKIP</option>
+                            <option value="2" selected>WPA2-AES</option>
+                            <option value="3">WPA2-MIXED</option>
+                        </select>
+                    </div>
+
+                    <input type="hidden" name="w4" value="true">
+
+                    <div class="flex gap-3 mt-4">
+                        <button type="button" class="btn btn-primary flex-1" onclick="saveWifi(false)">Apply</button>
+                        <button type="button" class="btn btn-success flex-1" onclick="saveWifi(true)">Save & Reboot</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Display Selection -->
+        <div class="card bg-base-100 shadow-md mb-4">
+            <div class="card-body">
+                <h2 class="card-title text-base border-b border-base-300 pb-3 mb-4">Display Type</h2>
+                <div class="form-control mb-4">
+                    <select id="displayType" class="select select-bordered w-full">
+                        <option value="0">Mini 12864 (128x64 Monochrome)</option>
+                    </select>
+                </div>
+                <div class="flex gap-3">
+                    <button class="btn btn-primary flex-1" onclick="saveDisplay(false)">Apply</button>
+                    <button class="btn btn-warning flex-1" onclick="saveDisplay(true)">Save & Reboot</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pico LED Control -->
+        <div class="card bg-base-100 shadow-md mb-4">
+            <div class="card-body">
+                <h2 class="card-title text-base border-b border-base-300 pb-3 mb-4">Pico LED</h2>
+                <div class="flex gap-3">
+                    <button class="btn btn-success flex-1" onclick="setPicoLed(true)">On</button>
+                    <button class="btn btn-outline flex-1" onclick="setPicoLed(false)">Off</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Errors -->
+        <div class="card bg-base-100 shadow-md mb-4">
+            <div class="card-body">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="card-title text-base m-0">Errors</h2>
+                    <span id="errorBadge" class="badge badge-success">0 errors</span>
+                </div>
+                <div id="errorList" class="space-y-2">
+                    <div class="text-center py-6 text-base-content/60 bg-base-200 rounded-lg">No errors</div>
+                </div>
+                <div class="flex gap-3 mt-4">
+                    <button class="btn btn-outline flex-1" onclick="refreshErrors()">Refresh</button>
+                    <button class="btn btn-outline flex-1" onclick="clearErrors()">Clear All</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function loadWifiConfig() {
+            fetch('/rest/wireless_config')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('ssid').value = data.w0 || '';
+                document.getElementById('authMethod').value = data.w2 || '2';
+                document.getElementById('wifiSsid').innerText = data.w0 || '--';
+                const statusEl = document.getElementById('wifiStatus');
+                if (data.w4) {
+                    statusEl.innerText = 'Enabled';
+                    statusEl.className = 'font-semibold text-success';
+                } else {
+                    statusEl.innerText = 'Disabled';
+                    statusEl.className = 'font-semibold text-error';
+                }
+            })
+            .catch(() => {});
+            document.getElementById('wifiIp').innerText = window.location.hostname;
+        }
+
+        function saveWifi(reboot) {
+            const form = document.getElementById('wifiForm');
+            const params = new URLSearchParams(new FormData(form));
+            if (reboot) params.append('save', 'true');
+            fetch('/rest/wireless_config?' + params.toString())
+            .then(r => r.json())
+            .then(() => {
+                if (reboot) {
+                    fetch('/rest/system_control?s4=true&s5=true');
+                    alert('Settings saved. Rebooting...');
+                } else {
+                    alert('Settings applied.');
+                    loadWifiConfig();
+                }
+            })
+            .catch(() => alert('Failed to save settings.'));
+        }
+
+        function setPicoLed(on) {
+            fetch('/rest/pico_led?state=' + (on ? '1' : '0')).catch(() => {});
+        }
+
+        function loadDisplayConfig() {
+            fetch('/rest/display_config')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('displayType').value = data.d0 || '0';
+            })
+            .catch(() => {});
+        }
+
+        function saveDisplay(reboot) {
+            const displayType = document.getElementById('displayType').value;
+            const displayNames = ['Mini 12864'];
+
+            if (reboot && !confirm(`Save display "${displayNames[displayType]}" and reboot?`)) return;
+
+            fetch('/rest/display_config?d0=' + displayType + '&ee=' + reboot)
+            .then(r => r.json())
+            .then(() => {
+                if (reboot) {
+                    fetch('/rest/system_control?s4=true&s5=true');
+                    alert('Display setting saved. Rebooting...');
+                } else {
+                    alert('Display setting applied.');
+                }
+            })
+            .catch(() => alert('Failed to save display setting.'));
+        }
+
+        function refreshErrors() {
+            fetch('/rest/errors')
+            .then(r => r.json())
+            .then(data => {
+                const badge = document.getElementById('errorBadge');
+                const list = document.getElementById('errorList');
+                const count = data.count || 0;
+                badge.innerText = count + ' error' + (count !== 1 ? 's' : '');
+                badge.className = 'badge ' + (count > 0 ? 'badge-error' : 'badge-success');
+                if (count === 0) {
+                    list.innerHTML = '<div class="text-center py-6 text-base-content/60 bg-base-200 rounded-lg">No errors</div>';
+                } else {
+                    list.innerHTML = data.errors.map(e =>
+                        '<div class="flex items-start gap-3 p-3 bg-error/10 border-l-4 border-error rounded-r-lg">' +
+                        '<span class="font-mono font-bold text-error whitespace-nowrap">[' + e.cat + ':' + e.code + ']</span>' +
+                        '<span class="text-base-content/80">' + e.msg + '</span>' +
+                        '</div>'
+                    ).join('');
+                }
+            })
+            .catch(() => {});
+        }
+
+        function clearErrors() {
+            fetch('/rest/errors?clear=1')
+            .then(() => refreshErrors())
+            .catch(() => {});
+        }
+
+        loadWifiConfig();
+        loadDisplayConfig();
+        refreshErrors();
+    </script>
+</body>
+</html>

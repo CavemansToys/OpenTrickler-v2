@@ -10,6 +10,7 @@
 #include "hardware/regs/addressmap.h"
 
 #include "eeprom.h"
+#include "error.h"
 #include "scale.h"
 #include "motors.h"
 #include "charge_mode.h"
@@ -23,7 +24,7 @@
 
 
 extern bool cat24c256_eeprom_erase();
-extern void cat24c256_eeprom_init();
+extern bool cat24c256_eeprom_init();
 extern bool cat24c256_write(uint16_t data_addr, uint8_t * data, size_t len);
 extern bool cat24c256_read(uint16_t data_addr, uint8_t * data, size_t len);
 
@@ -55,6 +56,10 @@ uint32_t rnd(void){
 
 void eeprom_register_handler(eeprom_save_handler_t handler) {
     _eeprom_save_handler_node_t * new_node = malloc(sizeof(_eeprom_save_handler_node_t));
+    if (new_node == NULL) {
+        report_error(ERR_EEPROM_HANDLER_ALLOC);
+        return;
+    }
     new_node->function_handler = handler;
 
     // Append to the head
@@ -93,7 +98,10 @@ bool eeprom_init(void) {
         return false;
     }
     
-    cat24c256_eeprom_init();
+    if (!cat24c256_eeprom_init()) {
+        printf("EEPROM I2C device not detected\n");
+        return false;
+    }
 
     // Read data revision, if match then move forward
     is_ok = eeprom_read(EEPROM_METADATA_BASE_ADDR, (uint8_t *) &metadata, sizeof(eeprom_metadata_t));
@@ -134,14 +142,18 @@ bool eeprom_config_save() {
 }
 
 
-static inline void _take_mutex(BaseType_t scheduler_state) {
-    if (scheduler_state != taskSCHEDULER_NOT_STARTED){
-        xSemaphoreTake(eeprom_access_mutex, portMAX_DELAY);
+static inline bool _take_mutex(BaseType_t scheduler_state) {
+    if (scheduler_state != taskSCHEDULER_NOT_STARTED && eeprom_access_mutex != NULL){
+        // Use timeout to prevent freezes - 2 seconds should be enough for any EEPROM op
+        if (xSemaphoreTake(eeprom_access_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+            return false;
+        }
     }
+    return true;
 }
 
 static inline void _give_mutex(BaseType_t scheduler_state) {
-    if (scheduler_state != taskSCHEDULER_NOT_STARTED){
+    if (scheduler_state != taskSCHEDULER_NOT_STARTED && eeprom_access_mutex != NULL){
         xSemaphoreGive(eeprom_access_mutex);
     }
 }
@@ -150,7 +162,9 @@ bool eeprom_read(uint16_t data_addr, uint8_t * data, size_t len) {
     BaseType_t scheduler_state = xTaskGetSchedulerState();
     bool is_ok;
 
-    _take_mutex(scheduler_state);
+    if (!_take_mutex(scheduler_state)) {
+        return false;
+    }
 
     is_ok = cat24c256_read(data_addr, data, len);
 
@@ -164,7 +178,9 @@ bool eeprom_write(uint16_t data_addr, uint8_t * data, size_t len) {
     BaseType_t scheduler_state = xTaskGetSchedulerState();
     bool is_ok;
 
-    _take_mutex(scheduler_state);
+    if (!_take_mutex(scheduler_state)) {
+        return false;
+    }
 
     is_ok = cat24c256_write(data_addr, data, len);
 
@@ -176,11 +192,11 @@ bool eeprom_write(uint16_t data_addr, uint8_t * data, size_t len) {
 
 bool eeprom_get_board_id(char ** board_id_buffer, size_t bytes_to_copy) {
     if (bytes_to_copy > sizeof(metadata.unique_id)) {
-        exit(-1);
+        report_error(ERR_EEPROM_INVALID_SIZE);
         return false;
     }
 
-    memcpy(board_id_buffer, metadata.unique_id, bytes_to_copy);
+    memcpy(*board_id_buffer, metadata.unique_id, bytes_to_copy);
 
     return true;
 }

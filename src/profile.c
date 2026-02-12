@@ -1,11 +1,18 @@
 #include <string.h>
+#include <stdio.h>
+#include <FreeRTOS.h>
+#include <semphr.h>
 
 #include "profile.h"
 #include "eeprom.h"
 #include "common.h"
+#include "error.h"
 
 
 eeprom_profile_data_t profile_data;
+
+// Mutex to protect PID parameter access (prevents race between REST writes and motor control reads)
+static SemaphoreHandle_t g_profile_pid_mutex = NULL;
 
 extern void swuart_calcCRC(uint8_t* datagram, uint8_t datagramLength);
 
@@ -67,16 +74,41 @@ bool profile_data_save() {
 bool profile_data_init() {
     bool is_ok = true;
 
+    // Create mutex for thread-safe PID parameter access
+    if (g_profile_pid_mutex == NULL) {
+        g_profile_pid_mutex = xSemaphoreCreateMutex();
+        if (g_profile_pid_mutex == NULL) {
+            printf("Profile: FATAL - Failed to create PID mutex!\n");
+            return false;
+        }
+    }
+
     // Read profile index table
     memset(&profile_data, 0x0, sizeof(eeprom_profile_data_t));
     is_ok = eeprom_read(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
 
+    bool need_defaults = false;
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
-        return false;
+        printf("Unable to read from EEPROM at address %x, using defaults\n", EEPROM_PROFILE_DATA_BASE_ADDR);
+        report_error(ERR_PROFILE_EEPROM_READ);
+        need_defaults = true;
+    } else {
+        // Ensure all profile names are null-terminated (EEPROM could contain garbage)
+        for (uint8_t idx = 0; idx < MAX_PROFILE_CNT; idx++) {
+            profile_data.profiles[idx].name[PROFILE_NAME_MAX_LEN - 1] = '\0';
+        }
+
+        // Bounds check: EEPROM could contain garbage index
+        if (profile_data.current_profile_idx >= MAX_PROFILE_CNT) {
+            profile_data.current_profile_idx = 0;
+        }
+
+        if (profile_data.profile_data_rev != EEPROM_PROFILE_DATA_REV) {
+            need_defaults = true;
+        }
     }
 
-    if (profile_data.profile_data_rev != EEPROM_PROFILE_DATA_REV) {
+    if (need_defaults) {
         profile_data.profile_data_rev = EEPROM_PROFILE_DATA_REV;
         // Set default selected profile
         profile_data.current_profile_idx = 0;
@@ -93,12 +125,14 @@ bool profile_data_init() {
             profile_t * selected_profile = &profile_data.profiles[idx];
 
             // Provide default name
-            snprintf(selected_profile->name, PROFILE_NAME_MAX_LEN, 
+            snprintf(selected_profile->name, PROFILE_NAME_MAX_LEN,
                      "NewProfile%d", idx);
         }
 
-        // Write back
-        profile_data_save();
+        // Write back (may fail if no EEPROM)
+        if (is_ok && !profile_data_save()) {
+            report_error(ERR_PROFILE_EEPROM_WRITE);
+        }
     }
 
     // Register to eeprom save all
@@ -119,14 +153,67 @@ profile_t * profile_get_selected() {
 
 
 profile_t * profile_select(uint8_t idx) {
+    // Bounds check to prevent array overflow
+    if (idx >= MAX_PROFILE_CNT) {
+        report_error(ERR_PROFILE_EEPROM_READ);
+        return NULL;
+    }
     profile_data.current_profile_idx = idx;
 
-    return profile_get_selected(idx);
+    return profile_get_selected();
+}
+
+
+// Thread-safe read of PID parameters
+void profile_get_pid_params(float* coarse_kp, float* coarse_kd, float* fine_kp, float* fine_kd) {
+    profile_t* profile = profile_get_selected();
+
+    if (g_profile_pid_mutex != NULL) {
+        if (xSemaphoreTake(g_profile_pid_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            *coarse_kp = profile->coarse_kp;
+            *coarse_kd = profile->coarse_kd;
+            *fine_kp = profile->fine_kp;
+            *fine_kd = profile->fine_kd;
+            xSemaphoreGive(g_profile_pid_mutex);
+            return;
+        }
+    }
+
+    *coarse_kp = profile->coarse_kp;
+    *coarse_kd = profile->coarse_kd;
+    *fine_kp = profile->fine_kp;
+    *fine_kd = profile->fine_kd;
+}
+
+
+// Thread-safe write of PID parameters
+void profile_set_pid_params(float coarse_kp, float coarse_kd, float fine_kp, float fine_kd) {
+    profile_t* profile = profile_get_selected();
+
+    if (g_profile_pid_mutex != NULL) {
+        if (xSemaphoreTake(g_profile_pid_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            profile->coarse_kp = coarse_kp;
+            profile->coarse_kd = coarse_kd;
+            profile->fine_kp = fine_kp;
+            profile->fine_kd = fine_kd;
+            xSemaphoreGive(g_profile_pid_mutex);
+            return;
+        }
+    }
+
+    profile->coarse_kp = coarse_kp;
+    profile->coarse_kd = coarse_kd;
+    profile->fine_kp = fine_kp;
+    profile->fine_kd = fine_kd;
 }
 
 
 void profile_update_checksum() {
-    swuart_calcCRC((uint8_t *) profile_get_selected(), sizeof(profile_t));
+    // NOTE: swuart_calcCRC overwrites the last byte of the datagram with CRC,
+    // which would corrupt the last byte of profile_t (fine_max_flow_speed_rps).
+    // This function is intentionally left as a no-op to prevent data corruption.
+    // A proper CRC field should be added to profile_t if checksum is needed.
+    (void)0;
 }
 
 bool http_rest_profile_config(struct fs_file *file, int num_params, char *params[], char *values[]) {
@@ -154,17 +241,27 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
     // Overwrite the profile index (if applicable)
     for (int idx = 0; idx < num_params; idx += 1) {
         if (strcmp(params[idx], "pf") == 0) {
-            profile_idx = (uint16_t) atoi(values[0]);
+            int raw_idx = atoi(values[idx]);
+            if (raw_idx >= 0 && raw_idx < MAX_PROFILE_CNT) {
+                profile_idx = (uint8_t)raw_idx;
+            }
         }
     }
 
     if (profile_idx >= MAX_PROFILE_CNT) {
-        strcpy(buf, "{\"error\":\"InvalidProfileIndex\"}");
+        snprintf(buf, sizeof(buf), "%s{\"error\":\"InvalidProfileIndex\"}", http_json_header);
     }
 
     else {
         profile_t * current_profile = profile_select(profile_idx);
         bool save_to_eeprom = false;
+
+        // Read current PID values first (we'll update and write back atomically)
+        float new_coarse_kp = current_profile->coarse_kp;
+        float new_coarse_kd = current_profile->coarse_kd;
+        float new_fine_kp = current_profile->fine_kp;
+        float new_fine_kd = current_profile->fine_kd;
+        bool pid_changed = false;
 
         // Control
         for (int idx = 0; idx < num_params; idx += 1) {
@@ -175,16 +272,19 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
                 current_profile->compatibility = strtol(values[idx], NULL, 10);
             }
             else if (strcmp(params[idx], "p2") == 0) {
-                strncpy(current_profile->name, values[idx], sizeof(current_profile->name));
+                strncpy(current_profile->name, values[idx], sizeof(current_profile->name) - 1);
+                current_profile->name[sizeof(current_profile->name) - 1] = '\0';
             }
             else if (strcmp(params[idx], "p3") == 0) {
-                current_profile->coarse_kp = strtof(values[idx], NULL);
+                new_coarse_kp = strtof(values[idx], NULL);
+                pid_changed = true;
             }
             else if (strcmp(params[idx], "p4") == 0) {
                 current_profile->coarse_ki = strtof(values[idx], NULL);
             }
             else if (strcmp(params[idx], "p5") == 0) {
-                current_profile->coarse_kd = strtof(values[idx], NULL);
+                new_coarse_kd = strtof(values[idx], NULL);
+                pid_changed = true;
             }
             else if (strcmp(params[idx], "p6") == 0) {
                 current_profile->coarse_min_flow_speed_rps = strtof(values[idx], NULL);
@@ -193,13 +293,15 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
                 current_profile->coarse_max_flow_speed_rps = strtof(values[idx], NULL);
             }
             else if (strcmp(params[idx], "p8") == 0) {
-                current_profile->fine_kp = strtof(values[idx], NULL);
+                new_fine_kp = strtof(values[idx], NULL);
+                pid_changed = true;
             }
             else if (strcmp(params[idx], "p9") == 0) {
                 current_profile->fine_ki = strtof(values[idx], NULL);
             }
             else if (strcmp(params[idx], "p10") == 0) {
-                current_profile->fine_kd = strtof(values[idx], NULL);
+                new_fine_kd = strtof(values[idx], NULL);
+                pid_changed = true;
             }
             else if (strcmp(params[idx], "p11") == 0) {
                 current_profile->fine_min_flow_speed_rps = strtof(values[idx], NULL);
@@ -210,6 +312,11 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
             else if (strcmp(params[idx], "ee") == 0) {
                 save_to_eeprom = string_to_boolean(values[idx]);
             }
+        }
+
+        // Write PID values atomically using mutex-protected function
+        if (pid_changed) {
+            profile_set_pid_params(new_coarse_kp, new_coarse_kd, new_fine_kp, new_fine_kd);
         }
 
         // Perform action
@@ -251,42 +358,42 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
 bool http_rest_profile_summary(struct fs_file *file, int num_params, char *params[], char *values[])
 {
     // It does not take argument
-    assert(MAX_PROFILE_CNT <= 8);  // Ensures 256 byte buffer us sufficient
-    static char buf[256];
+    // Buffer: HTTP header (~50) + {"s0":{ + 8 profiles * ~30 chars each + closing
+    static char buf[512];
 
     // Response
-    // s0 (dict): A dictionary of all profiles in {idx: name} format. 
+    // s0 (dict): A dictionary of all profiles in {idx: name} format.
     // s1 (int): The current loaded profile index
-    memset(buf, 0x0, sizeof(buf));
-    const char * item_template = "\"%d\":\"%s\",";
 
-    // Create header
-    snprintf(buf, sizeof(buf), 
+    int len = snprintf(buf, sizeof(buf),
              "%s{\"s0\":{",
              http_json_header);
 
-    size_t char_idx = strlen(buf);
-
     // Write profile information
-    for (uint8_t p_idx=0; p_idx < MAX_PROFILE_CNT; p_idx+=1) {
-        snprintf(&buf[char_idx], sizeof(buf) - char_idx, 
-                 item_template,
-                 p_idx, &profile_data.profiles[p_idx].name);
-        char_idx += strnlen((const char *) &buf[char_idx], sizeof(buf));
+    for (uint8_t p_idx = 0; p_idx < MAX_PROFILE_CNT; p_idx++) {
+        if (len >= (int)sizeof(buf) - 1) break;
+        len += snprintf(&buf[len], sizeof(buf) - len,
+                 "\"%d\":\"%s\",",
+                 p_idx, profile_data.profiles[p_idx].name);
     }
 
-    // Append close bracket (replace the last comma)
-    buf[char_idx - 1] = '}';
+    // Replace trailing comma with close brace
+    if (len > 0 && buf[len - 1] == ',') {
+        buf[len - 1] = '}';
+    }
 
     // Append s1
-    snprintf(&buf[char_idx], sizeof(buf) - char_idx,
-             ",\"s1\":%d}", 
+    len += snprintf(&buf[len], sizeof(buf) - len,
+             ",\"s1\":%d}",
              profile_data.current_profile_idx);
 
-    size_t response_len = strlen(buf);
+    if (len >= (int)sizeof(buf)) {
+        len = (int)sizeof(buf) - 1;
+    }
+
     file->data = buf;
-    file->len = response_len;
-    file->index = response_len;
+    file->len = len;
+    file->index = len;
     file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
 
     return true;

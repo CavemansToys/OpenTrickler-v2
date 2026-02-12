@@ -6,6 +6,9 @@
 #include <mui.h>
 #include <mui_u8g2.h>
 
+#include "pico/stdlib.h"
+#include "hardware/watchdog.h"
+
 #include "app.h"
 #include "configuration.h"
 #include "scale.h"
@@ -14,9 +17,9 @@
 #include "eeprom.h"
 #include "charge_mode.h"
 #include "cleanup_mode.h"
-#include "eeprom.h"
 #include "wireless.h"
 #include "system_control.h"
+#include "app_state.h"
 
 // External variables
 extern muif_t muif_list[];
@@ -26,8 +29,7 @@ extern const size_t muif_cnt;
 // External menus
 
 // Local variables
-
-AppState_t exit_state = APP_STATE_DEFAULT;
+// exit_state is now defined in app_state.c
 
 
 void menu_task(void *p){
@@ -39,9 +41,11 @@ void menu_task(void *p){
     mui_GotoForm(&mui, 1, 0);
 
     // Render the menu before user input
+    acquire_display_buffer_access();
     u8g2_ClearBuffer(display_handler);
     mui_Draw(&mui);
     u8g2_SendBuffer(display_handler);
+    release_display_buffer_access();
 
     while (true) {
         if (mui_IsFormActive(&mui)) {
@@ -65,7 +69,13 @@ void menu_task(void *p){
         else {
             uint8_t exit_form_id = 1;  // by default it goes to the main menu
             // menu is not active, leave the control to the app
-            switch (exit_state) {
+            // Use critical section for atomic read-then-reset of exit_state
+            taskENTER_CRITICAL();
+            AppState_t current_exit_state = exit_state;
+            exit_state = APP_STATE_DEFAULT;  // Reset to prevent re-entering the same state
+            taskEXIT_CRITICAL();
+
+            switch (current_exit_state) {
                 case APP_STATE_ENTER_CHARGE_MODE:
                     exit_form_id = charge_mode_menu(false);
                     break;
@@ -78,7 +88,7 @@ void menu_task(void *p){
                 case APP_STATE_ENTER_SCALE_CALIBRATION:
                     exit_form_id = scale_calibrate_with_external_weight();
                     break;
-                case APP_STATE_ENTER_EEPROM_SAVE: 
+                case APP_STATE_ENTER_EEPROM_SAVE:
                     exit_form_id = eeprom_save_all();
                     break;
                 case APP_STATE_ENTER_EEPROM_ERASE:
@@ -97,8 +107,10 @@ void menu_task(void *p){
             mui_GotoForm(&mui, exit_form_id, 0);
         }
 
+        acquire_display_buffer_access();
         u8g2_ClearBuffer(display_handler);
         mui_Draw(&mui);
         u8g2_SendBuffer(display_handler);
+        release_display_buffer_access();
     }
 }

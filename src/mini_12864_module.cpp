@@ -1,4 +1,4 @@
-// 
+//
 //            -----
 //        5V |10  9 | GND
 //        -- | 8  7 | --
@@ -15,7 +15,7 @@
 //  (LCD_SCK)| 2  1 | --
 //            ------
 //             EXP2
-// 
+//
 // For Pico W
 // EXP1_2 (BTN_ENC) <-> PIN29 (GP22)
 // EXP2_5 (ENCODER2) <-> PIN19 (GP14)
@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include <FreeRTOS.h>
 #include <queue.h>
 
@@ -34,20 +35,17 @@
 #include "mui_u8g2.h"
 
 #include "configuration.h"
-#include "gpio_irq_handler.h"
 #include "mini_12864_module.h"
+#include "encoder.h"
 #include "http_rest.h"
 #include "eeprom.h"
 #include "common.h"
-#include "mini_12864_module.h"
 #include "display.h"
+#include "display_config.h"
 
 
 // Configs
 mini_12864_module_config_t mini_12864_module_config;
-
-// Statics (to be shared between IRQ and tasks)
-QueueHandle_t encoder_event_queue = NULL;
 
 // Local variables
 extern u8g2_t display_handler;
@@ -58,121 +56,6 @@ extern fds_t fds_data[];
 extern const size_t muif_cnt;
 
 
-
-void _isr_on_encoder_update(uint gpio, uint32_t event){
-    static uint8_t state = 2;
-    static int8_t count = 0;
-
-    bool en1 = gpio_get(BUTTON0_ENCODER_PIN1);
-    bool en2 = gpio_get(BUTTON0_ENCODER_PIN2);
-
-    switch (state) {
-        case 0: {
-            if (en1) {
-                count += 1;
-                state = 1;
-            }
-            else if (en2) {
-                count -= 1;
-                state = 3;
-            }
-            break;
-        }
-        case 1: {
-            if (!en1) {
-                count -= 1;
-                state = 0;
-            }
-            else if (en2) {
-                count += 1;
-                state = 2;
-            }
-            break;
-        }
-        case 2: {
-            if (!en1) {
-                count += 1;
-                state = 3;
-            }
-            else if (!en2) {
-                count -= 1;
-                state = 1;
-            }
-            break;
-        }
-        case 3: {
-            if (!en1) {
-                count += 1;
-                state = 0;
-            }
-            else if (en2) {
-                count -= 1;
-                state = 2;
-            }
-            break;
-        }
-        default:
-            break;
-    }
-
-    ButtonEncoderEvent_t button_encoder_event;
-    if (count >= 4) {
-        count = 0;
-
-        if (mini_12864_module_config.inverted_encoder_direction) {
-            button_encoder_event = BUTTON_ENCODER_ROTATE_CCW;
-        }
-        else {
-            button_encoder_event = BUTTON_ENCODER_ROTATE_CW;
-        }
-        
-        if (encoder_event_queue) {
-            xQueueSendFromISR(encoder_event_queue, &button_encoder_event, NULL);
-        }
-    }
-    else if (count <= -4) {
-        count = 0;
-
-        if (mini_12864_module_config.inverted_encoder_direction) {
-            button_encoder_event = BUTTON_ENCODER_ROTATE_CW;
-        }
-        else {
-            button_encoder_event = BUTTON_ENCODER_ROTATE_CCW;
-        }
-
-        if (encoder_event_queue) {
-            xQueueSendFromISR(encoder_event_queue, &button_encoder_event, NULL);
-        }
-    }
-}
-
-void _isr_on_button_enc_update(uint gpio, uint32_t event) {
-    static TickType_t last_call_time = 0;
-    const TickType_t debounce_timeout_ticks = pdMS_TO_TICKS(250);
-
-    // Button debounce
-    TickType_t current_call_time = xTaskGetTickCountFromISR();
-     if ((current_call_time - last_call_time) > debounce_timeout_ticks) {
-        ButtonEncoderEvent_t button_encoder_event = BUTTON_ENCODER_PRESSED;
-        xQueueSendFromISR(encoder_event_queue, &button_encoder_event, NULL);
-    }
-    last_call_time = current_call_time;
-}
-
-void _isr_on_button_rst_update(uint gpio, uint32_t event) {
-    static TickType_t last_call_time = 0;
-    const TickType_t debounce_timeout_ticks = pdMS_TO_TICKS(250);
-
-    // Button debounce
-    TickType_t current_call_time = xTaskGetTickCountFromISR();
-    if ((current_call_time - last_call_time) > debounce_timeout_ticks) {
-        ButtonEncoderEvent_t button_encoder_event = BUTTON_RST_PRESSED;
-        xQueueSendFromISR(encoder_event_queue, &button_encoder_event, NULL);
-    }
-    last_call_time = current_call_time;
-}
-
-
 bool mini_12864_module_config_save() {
     bool is_ok = eeprom_write(EEPROM_MINI_12864_CONFIG_BASE_ADDR, (uint8_t *) &mini_12864_module_config, sizeof(mini_12864_module_config));
     return is_ok;
@@ -180,77 +63,15 @@ bool mini_12864_module_config_save() {
 
 
 bool mini_12864_module_init() {
-    bool is_ok;
-
-    // Read configuration
-    memset(&mini_12864_module_config, 0x0, sizeof(mini_12864_module_config));
-    is_ok = eeprom_read(EEPROM_MINI_12864_CONFIG_BASE_ADDR, (uint8_t *)&mini_12864_module_config, sizeof(mini_12864_module_config));
-    if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_MINI_12864_CONFIG_BASE_ADDR);
-        return false;
-    }
-
-    if (mini_12864_module_config.data_rev != EEPROM_MINI_12864_MODULE_DATA_REV) {
-        mini_12864_module_config.data_rev = EEPROM_MINI_12864_MODULE_DATA_REV;
-
-        // Set default
-        mini_12864_module_config.inverted_encoder_direction = false;
-        mini_12864_module_config.display_rotation = DISPLAY_ROTATION_0;
-
-        // Write back
-        is_ok = mini_12864_module_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_MINI_12864_CONFIG_BASE_ADDR);
-            return false;
-        }
-    }
-
-    // Register to eeprom save all
-    eeprom_register_handler(mini_12864_module_config_save);
+    // Display settings are now managed by display_config (rotation, encoder inversion, etc.)
+    // display_config_init() should be called before this function
 
     // Run subsequent function inits
-    button_init();
+    button_init();  // From encoder.cpp
     display_init();
 
-    return is_ok;
+    return true;
 }
-  
-
-void button_init() {
-    printf("Initializing Button Task -- ");
-
-    // Configure button encoder
-    gpio_init(BUTTON0_ENCODER_PIN1);
-    gpio_set_dir(BUTTON0_ENCODER_PIN1, GPIO_IN);
-    gpio_pull_up(BUTTON0_ENCODER_PIN1);
-
-    gpio_init(BUTTON0_ENCODER_PIN2);
-    gpio_set_dir(BUTTON0_ENCODER_PIN2, GPIO_IN);
-    gpio_pull_up(BUTTON0_ENCODER_PIN2);
-
-    // Configure button encoder
-    gpio_init(BUTTON0_ENC_PIN);
-    gpio_set_dir(BUTTON0_ENC_PIN, GPIO_IN);
-    gpio_pull_up(BUTTON0_ENC_PIN);
-
-    // // Configure button reset
-    gpio_init(BUTTON0_RST_PIN);
-    gpio_set_dir(BUTTON0_RST_PIN, GPIO_IN);
-    gpio_pull_up(BUTTON0_RST_PIN);
-
-    irq_handler.register_interrupt(BUTTON0_ENCODER_PIN1, gpio_irq_handler::irq_event::change, _isr_on_encoder_update);
-    irq_handler.register_interrupt(BUTTON0_ENCODER_PIN2, gpio_irq_handler::irq_event::change, _isr_on_encoder_update);
-    irq_handler.register_interrupt(BUTTON0_ENC_PIN, gpio_irq_handler::irq_event::fall, _isr_on_button_enc_update);
-    irq_handler.register_interrupt(BUTTON0_RST_PIN, gpio_irq_handler::irq_event::fall, _isr_on_button_rst_update);
-
-    encoder_event_queue = xQueueCreate(5, sizeof(ButtonEncoderEvent_t));
-    if (encoder_event_queue == 0) {
-        assert(false);
-    }
-
-    printf("done\n");
-}
-
 
 
 uint8_t u8x8_gpio_and_delay(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *arg_ptr)
@@ -261,7 +82,7 @@ uint8_t u8x8_gpio_and_delay(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *ar
             // We don't initialize here
             break;							// can be used to setup pins
         case U8X8_MSG_DELAY_NANO:			// delay arg_int * 1 nano second
-            break;    
+            break;
         case U8X8_MSG_DELAY_100NANO:		// delay arg_int * 100 nano seconds
             __asm volatile ("NOP\n");
             break;
@@ -332,7 +153,7 @@ uint8_t u8x8_gpio_and_delay(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *ar
     return 1;
 }
 
-uint8_t u8x8_byte_pico_hw_spi(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *arg_ptr) 
+uint8_t u8x8_byte_pico_hw_spi(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *arg_ptr)
 {
     switch (msg)
     {
@@ -348,7 +169,7 @@ uint8_t u8x8_byte_pico_hw_spi(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *
             u8x8_gpio_SetDC(u8x8, arg_int);
             break;
         case U8X8_MSG_BYTE_START_TRANSFER:
-            u8x8_gpio_SetCS(u8x8, u8x8->display_info->chip_enable_level);  
+            u8x8_gpio_SetCS(u8x8, u8x8->display_info->chip_enable_level);
             u8x8->gpio_and_delay_cb(u8x8, U8X8_MSG_DELAY_NANO, u8x8->display_info->post_chip_enable_wait_ns, NULL);
             break;
         case U8X8_MSG_BYTE_END_TRANSFER:
@@ -370,10 +191,8 @@ void display_init() {
     spi_init(DISPLAY0_SPI, 4000 * 1000);
 
     // Configure port for SPI
-    // gpio_set_function(DISPLAY0_RX_PIN, GPIO_FUNC_SPI);  // Rx
-    gpio_set_function(DISPLAY0_SCK_PIN, GPIO_FUNC_SPI);  // CSn
     gpio_set_function(DISPLAY0_SCK_PIN, GPIO_FUNC_SPI);  // SCK
-    gpio_set_function(DISPLAY0_TX_PIN, GPIO_FUNC_SPI);  // Tx
+    gpio_set_function(DISPLAY0_TX_PIN, GPIO_FUNC_SPI);  // Tx (MOSI)
 
     // Configure property for CS
     gpio_init(DISPLAY0_CS_PIN);
@@ -392,9 +211,9 @@ void display_init() {
 
     // Initialize driver
     u8g2_Setup_uc1701_mini12864_f(
-        &display_handler, 
-        U8G2_R0, 
-        u8x8_byte_pico_hw_spi, 
+        &display_handler,
+        U8G2_R0,
+        u8x8_byte_pico_hw_spi,
         u8x8_gpio_and_delay
     );
 
@@ -403,9 +222,9 @@ void display_init() {
     u8g2_SetPowerSave(&display_handler, 0);
     u8g2_SetContrast(&display_handler, 255);
 
-    // Initialize screen rotation
+    // Initialize screen rotation from display_config
     const u8g2_cb_t *u8g2_cb;
-    switch (mini_12864_module_config.display_rotation)
+    switch (display_config_get()->rotation)
     {
         case DISPLAY_ROTATION_90:
             u8g2_cb = U8G2_R1;
@@ -423,100 +242,34 @@ void display_init() {
     }
     u8g2_SetDisplayRotation(&display_handler, u8g2_cb);
 
-    // Clear 
+    // Clear
     u8g2_ClearBuffer(&display_handler);
     u8g2_ClearDisplay(&display_handler);
-
-    // u8g2_SetMaxClipWindow(&display_handler);
-    // u8g2_SetFont(&display_handler, u8g2_font_6x13_tr);
-    // u8g2_DrawStr(&display_handler, 20, 20, "Hello");
-    // u8g2_UpdateDisplay(&display_handler);
 
     printf("done\n");
 }
 
 
 
-bool http_rest_button_control(struct fs_file *file, int num_params, char *params[], char *values[]) {
-    static char button_control_json_buffer[256];
-    memset(button_control_json_buffer, 0x0, sizeof(button_control_json_buffer));
-
-    strcat(button_control_json_buffer, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"button_pressed\":[");
-
-    for (int idx = 0; idx < num_params; idx += 1) {
-        if (strcmp(params[idx], "CW") == 0) {
-            if (strcmp(values[idx], "true") == 0){
-                ButtonEncoderEvent_t button_event = BUTTON_ENCODER_ROTATE_CW;
-                xQueueSend(encoder_event_queue, &button_event, 0);
-
-                strcat(button_control_json_buffer, "\"CW\",");
-            }
-        }
-        
-        if (strcmp(params[idx], "CCW") == 0) {
-            if (strcmp(values[idx], "true") == 0){
-                ButtonEncoderEvent_t button_event = BUTTON_ENCODER_ROTATE_CCW;
-                xQueueSend(encoder_event_queue, &button_event, 0);
-
-                strcat(button_control_json_buffer, "\"CCW\",");
-            }
-        }
-
-        if (strcmp(params[idx], "PRESS") == 0) {
-            if (strcmp(values[idx], "true") == 0){
-                ButtonEncoderEvent_t button_event = BUTTON_ENCODER_PRESSED;
-                xQueueSend(encoder_event_queue, &button_event, 0);
-
-                strcat(button_control_json_buffer, "\"PRESS\",");
-            }
-        }
-
-        if (strcmp(params[idx], "RST") == 0) {
-            if (strcmp(values[idx], "true") == 0){
-                ButtonEncoderEvent_t button_event = BUTTON_RST_PRESSED;
-                xQueueSend(encoder_event_queue, &button_event, 0);
-
-                strcat(button_control_json_buffer, "\"RST\",");
-            }
-        }
-    }
-
-    // Remove trailing comma
-    size_t len = strlen(button_control_json_buffer);
-    if (button_control_json_buffer[len-1] == ',') {
-        button_control_json_buffer[len-1] = 0;
-    }
-
-    strcat(button_control_json_buffer, "]}");
-
-    // Send to client
-    len = strlen(button_control_json_buffer);
-
-    file->data = button_control_json_buffer;
-    file->len = len;
-    file->index = len;
-    file->flags = FS_FILE_FLAGS_HEADER_INCLUDED;
-
-    return true;
-}
-
-
 bool http_rest_mini_12864_module_config(struct fs_file *file, int num_params, char *params[], char *values[]) {
-    // Mappings:
-    // b0 (bool): inverted_encoder_direction
+    // Mappings (legacy - now delegated to display_config):
+    // b0 (bool): inverted_encoder_direction -> display_config.inverted_encoder
+    // b1 (int): display_rotation -> display_config.rotation
     // ee (bool): save to eeprom
     static char buf[128];
     bool save_to_eeprom = false;
+    display_config_t *config = display_config_get();
 
     // Control
     for (int idx = 0; idx < num_params; idx += 1) {
         if (strcmp(params[idx], "b0") == 0) {
-            bool inverted_encoder_direction = string_to_boolean(values[idx]);
-            mini_12864_module_config.inverted_encoder_direction = inverted_encoder_direction;
+            config->inverted_encoder = string_to_boolean(values[idx]);
         }
         if (strcmp(params[idx], "b1") == 0) {
-            display_rotation_t display_rotation = (display_rotation_t) atoi(values[idx]);
-            mini_12864_module_config.display_rotation = display_rotation;
+            int rot = atoi(values[idx]);
+            if (rot >= DISPLAY_ROTATION_0 && rot <= DISPLAY_ROTATION_270) {
+                config->rotation = (display_rotation_t) rot;
+            }
         }
         else if (strcmp(params[idx], "ee") == 0) {
             save_to_eeprom = string_to_boolean(values[idx]);
@@ -525,17 +278,17 @@ bool http_rest_mini_12864_module_config(struct fs_file *file, int num_params, ch
 
     // Perform action
     if (save_to_eeprom) {
-        mini_12864_module_config_save();
+        display_config_save();
     }
 
     // Response
-    snprintf(buf, sizeof(buf), 
+    snprintf(buf, sizeof(buf),
              "%s"
-             "{\"b0\":%s, \"b1\":%d}", 
+             "{\"b0\":%s, \"b1\":%d}",
              http_json_header,
-             boolean_to_string(mini_12864_module_config.inverted_encoder_direction),
-             mini_12864_module_config.display_rotation);
-    
+             boolean_to_string(config->inverted_encoder),
+             config->rotation);
+
     size_t response_len = strlen(buf);
     file->data = buf;
     file->len = response_len;
