@@ -1,0 +1,80 @@
+================================================================================
+                    OpenTrickler AI Tuning Guide
+================================================================================
+
+WHAT IS AI TUNING?
+------------------
+AI Tuning automatically finds the best motor speed settings for your trickler.
+Instead of manually adjusting values, the trickler tests different settings
+and learns what works best for your powder and setup.
+
+
+BEFORE YOU START
+----------------
+1. Make sure your scale is connected and zeroed
+2. Have powder in the hopper
+3. Place an empty pan on the scale
+4. Select the profile you want to tune
+
+
+HOW TO USE AI TUNING
+--------------------
+1. Open the OpenTrickler web portal in your browser
+2. Go to Settings > AI Tuning
+3. Select your profile (0-7)
+4. Enter your target charge weight (e.g., 42.5 grains)
+5. Click "Start"
+6. Wait while the trickler runs test drops (up to 30 drops)
+7. When done, click "Apply Recommended Parameters" to save
+
+
+WHAT YOU'LL SEE DURING TUNING
+-----------------------------
+The Status badge will show:
+
+  "phase1_coarse" = Tuning the coarse (fast) motor
+  "phase2_fine"   = Tuning the fine (slow) motor
+
+The drop counter shows how many test drops have been completed.
+A log shows each drop's results and what settings will be tried next.
+
+
+WHEN IT'S DONE
+--------------
+The Status badge turns green and shows "complete".
+Recommended settings appear on screen.
+Click "Apply Recommended Parameters" to save them to your profile.
+Click "Cancel" if you want to keep your old settings.
+
+
+MACHINE LEARNING
+----------------
+Every time you throw a charge, the trickler remembers what happened.
+After a few charges, it may suggest small improvements to your settings.
+You can apply these suggestions from the web portal.
+
+
+TIPS
+----
+- Don't bump the scale during tuning
+- Use the same powder you'll be loading with
+- If tuning fails, try adjusting the parameter ranges in settings
+- Tuning typically takes 10-20 drops to complete
+
+
+TROUBLESHOOTING
+---------------
+"Error: Did not converge"
+  - The trickler couldn't find good settings in 30 drops
+  - Try widening the parameter ranges in settings
+  - Check that your scale is stable
+
+Tuning seems slow?
+  - This is normal - the trickler is being careful to find optimal settings
+  - Each drop teaches it something new
+
+Settings don't feel right after tuning?
+  - Click "Cancel" to restore your previous settings
+  - Try tuning again with a different target weight
+
+================================================================================

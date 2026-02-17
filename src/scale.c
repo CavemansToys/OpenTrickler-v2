@@ -11,8 +11,8 @@
 #include "app.h"
 #include "scale.h"
 #include "common.h"
+#include "error.h"
 
-extern scale_handle_t generic_scale_drv_handle;
 extern scale_handle_t and_fxi_scale_handle;
 extern scale_handle_t steinberg_scale_handle;
 extern scale_handle_t ussolid_scale_handle;
@@ -20,7 +20,6 @@ extern scale_handle_t gng_scale_handle;
 extern scale_handle_t jm_science_scale_handle;
 extern scale_handle_t creedmoor_scale_handle;
 extern scale_handle_t radwag_ps_r2_scale_handle;
-extern scale_handle_t sartorius_scale_handle;
 
 scale_config_t scale_config;
 
@@ -66,18 +65,11 @@ void set_scale_driver(scale_driver_t scale_driver) {
             scale_config.scale_handle = &radwag_ps_r2_scale_handle;
             break;
         }
-        case SCALE_DRIVER_SARTORIUS:
-        {
-            scale_config.scale_handle = &sartorius_scale_handle;
-            break;
-        }
-        case SCALE_DRIVER_GENERIC_DRV:
-        {
-            scale_config.scale_handle = &generic_scale_drv_handle;
-            break;
-        }
         default:
-            assert(false);
+            // Invalid scale driver in EEPROM - report error and use fallback
+            printf("ERROR: Invalid scale driver %d, using AND_FXI as fallback\n", scale_driver);
+            report_error(ERR_SCALE_DRIVER_SELECT);
+            scale_config.scale_handle = &and_fxi_scale_handle;
             break;
     }
 }
@@ -108,7 +100,7 @@ const char * get_scale_driver_string() {
 
     switch (scale_config.persistent_config.scale_driver) {
         case SCALE_DRIVER_AND_FXI:
-            scale_driver_string = "AND FX-i Std";
+            scale_driver_string = "AND FX-i and FZ-i";
             break;
         case SCALE_DRIVER_STEINBERG_SBS:
             scale_driver_string = "Steinberg SBS";
@@ -128,9 +120,6 @@ const char * get_scale_driver_string() {
         case SCALE_DRIVER_RADWAG_PS_R2:
             scale_driver_string = "Radwag PS R2";
             break;
-        case SCALE_DRIVER_SARTORIUS:
-            scale_driver_string = "Sartorius";
-            break;
         default:
             break;
     }
@@ -144,41 +133,46 @@ bool scale_init() {
 
     // Read config from EEPROM
     is_ok = eeprom_read(EEPROM_SCALE_CONFIG_BASE_ADDR, (uint8_t *) &scale_config.persistent_config, sizeof(eeprom_scale_data_t));
+
+    bool need_defaults = false;
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_SCALE_CONFIG_BASE_ADDR);
-        return false;
+        printf("Unable to read from EEPROM at address %x, using defaults\n", EEPROM_SCALE_CONFIG_BASE_ADDR);
+        need_defaults = true;
+    } else if (scale_config.persistent_config.scale_data_rev != EEPROM_SCALE_DATA_REV) {
+        need_defaults = true;
     }
 
-    // If the revision doesn't match then re-initialize the config
-    if (scale_config.persistent_config.scale_data_rev != EEPROM_SCALE_DATA_REV) {
-
+    if (need_defaults) {
         scale_config.persistent_config.scale_data_rev = EEPROM_SCALE_DATA_REV;
         scale_config.persistent_config.scale_driver = SCALE_DRIVER_AND_FXI;
         scale_config.persistent_config.scale_baudrate = BAUDRATE_19200;
 
-        // Write data back
-        is_ok = scale_config_save();
-        if (!is_ok) {
+        // Write data back (may fail if no EEPROM)
+        if (is_ok && !scale_config_save()) {
             printf("Unable to write to %x\n", EEPROM_SCALE_CONFIG_BASE_ADDR);
-            return false;
         }
     }
 
     // Initialize UART
     uart_init(SCALE_UART, get_scale_baudrate(scale_config.persistent_config.scale_baudrate));
-    
-    // Set UART format: 7 data bits, 1 stop bit, no parity
-    uart_set_format(SCALE_UART, 7, 1, UART_PARITY_NONE);
 
     gpio_set_function(SCALE_UART_TX, GPIO_FUNC_UART);
     gpio_set_function(SCALE_UART_RX, GPIO_FUNC_UART);
 
     // Create control variables
-    // Semaphore to indicate the availability of new measurement. 
+    // Semaphore to indicate the availability of new measurement.
     scale_config.scale_measurement_ready = xSemaphoreCreateBinary();
+    if (scale_config.scale_measurement_ready == NULL) {
+        report_error(ERR_SCALE_SEMAPHORE_CREATE);
+        return false;
+    }
 
     // Mutex to control the access to the serial port write
     scale_config.scale_serial_write_access_mutex = xSemaphoreCreateMutex();
+    if (scale_config.scale_serial_write_access_mutex == NULL) {
+        report_error(ERR_SCALE_MUTEX_CREATE);
+        return false;
+    }
 
     // Initialize the measurement variable
     scale_config.current_scale_measurement = NAN;
@@ -188,12 +182,16 @@ bool scale_init() {
     set_scale_driver(scale_config.persistent_config.scale_driver);
 
     // Create the Task for the listener loop
-    xTaskCreate(scale_config.scale_handle->read_loop_task, "Scale Task", configMINIMAL_STACK_SIZE, NULL, 9, NULL);
+    BaseType_t task_created = xTaskCreate(scale_config.scale_handle->read_loop_task, "Scale Task", configMINIMAL_STACK_SIZE, NULL, 9, NULL);
+    if (task_created != pdPASS) {
+        report_error(ERR_SCALE_TASK_CREATE);
+        return false;
+    }
 
     // Register to eeprom save all
     eeprom_register_handler(scale_config_save);
 
-    return is_ok;
+    return true;
 }
 
 
@@ -203,10 +201,13 @@ bool scale_config_save() {
 }
 
 
-static inline void _take_mutex(BaseType_t scheduler_state) {
+static inline bool _take_mutex(BaseType_t scheduler_state) {
     if (scheduler_state != taskSCHEDULER_NOT_STARTED){
-        xSemaphoreTake(scale_config.scale_serial_write_access_mutex, portMAX_DELAY);
+        if (xSemaphoreTake(scale_config.scale_serial_write_access_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+            return false;
+        }
     }
+    return true;
 }
 
 
@@ -220,7 +221,9 @@ static inline void _give_mutex(BaseType_t scheduler_state) {
 void scale_write(const char * command, size_t len) {
     BaseType_t scheduler_state = xTaskGetSchedulerState();
 
-    _take_mutex(scheduler_state);
+    if (!_take_mutex(scheduler_state)) {
+        return;
+    }
 
     uart_write_blocking(SCALE_UART, (uint8_t *) command, len);
 
@@ -320,9 +323,11 @@ bool http_rest_scale_action(struct fs_file *file, int num_params, char *params[]
             
             switch (action) {
                 case SCALE_ACTION_FORCE_ZERO:
-                    scale_config.scale_handle->force_zero();
+                    if (scale_config.scale_handle && scale_config.scale_handle->force_zero) {
+                        scale_config.scale_handle->force_zero();
+                    }
                     break;
-                default: 
+                default:
                     break;
             }
         }
