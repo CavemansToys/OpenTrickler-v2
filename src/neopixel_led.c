@@ -121,15 +121,15 @@ bool neopixel_led_init(void) {
     // Initialize configuration
     memset(&neopixel_led_config, 0x0, sizeof(neopixel_led_config));
 
-    is_ok = eeprom_read(EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR, (uint8_t *) &neopixel_led_config.eeprom_neopixel_led_metadata, sizeof(eeprom_neopixel_led_metadata_t));
-    if (!is_ok) {
+    eeprom_error_code_e error_code = eeprom_read(EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR, (uint8_t *) &neopixel_led_config.eeprom_neopixel_led_metadata, sizeof(eeprom_neopixel_led_metadata_t));
+    if (error_code == EEPROM_ERROR_FAILED_TO_READ) {
         printf("Unable to read from EEPROM at address %x\n", EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR);
         return false;
     }
 
     // If the revision doesn't match then re-initialize the config
-    if (neopixel_led_config.eeprom_neopixel_led_metadata.neopixel_data_rev != EEPROM_NEOPIXEL_LED_METADATA_REV) {
-        neopixel_led_config.eeprom_neopixel_led_metadata.neopixel_data_rev = EEPROM_NEOPIXEL_LED_METADATA_REV;
+    if (error_code == EEPROM_ERROR_CRC_MISMATCH) {
+        printf("EEPROM Neopixel LED config CRC32 mismatch, data might be corrupted or updated, initialize with default config\n");
 
         // Default to white
         neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.led1_colour._raw_colour = RGB_COLOUR_DULL_WHITE;

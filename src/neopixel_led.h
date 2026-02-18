@@ -6,9 +6,6 @@
 #include "http_rest.h"
 #include "common.h"
 
-#define EEPROM_NEOPIXEL_LED_METADATA_REV                     4              // 16 byte 
-
-
 // A struct that uses 8bit bitfields to map R, G, B, W into a uint32_t memory space.
 #define RGB_COLOUR_GREEN 0x00FF00ul
 #define RGB_COLOUR_YELLOW 0xFFFF00ul
@@ -62,7 +59,6 @@ typedef enum {
 
 
 typedef struct {
-    uint16_t neopixel_data_rev;
     neopixel_led_colours_t default_led_colours;
 
     // PWM OUT LED configurations

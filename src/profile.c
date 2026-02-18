@@ -53,10 +53,6 @@ const profile_t default_ar_2209_profile = {
 
 bool profile_data_save() {
     bool is_ok = eeprom_write(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
-    if (!is_ok) {
-        printf("Unable to write to EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
-    }
-
     return is_ok;
 }
 
@@ -97,7 +93,11 @@ bool profile_data_init() {
         }
 
         // Write back
-        profile_data_save();
+        is_ok = profile_data_save();
+        if (!is_ok) {
+            printf("Unable to write to EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
+            return false;
+        }
     }
 
     // Register to eeprom save all
