@@ -25,7 +25,7 @@ To connect the OpenTrickler to your home network, you will need a laptop with wi
 2. Select the OpenTrickelr's SSID. Your computer will prompt for the password. By default the password is **opentrickler**.
    ![enter_password](../resources/connect_to_wireless/enter_password.png)
 
-3. Once connected, you should be assigned with IP address of *192.168.4.16*. To access the OpenTrickler configuration page, you need to visit [http://192.168.4.1](192.168.4.1). You will be prompted to enter your WiFi credentials. You need to enter below information:
+3. Once connected, you should be assigned with IP address of *192.168.4.16*. To access the OpenTrickler configuration page, you need to visit [http://192.168.4.1](http://192.168.4.1). You will be prompted to enter your WiFi credentials. You need to enter below information:
     ![configure_wireless](../resources/connect_to_wireless/setup_wizard.png)
    
    - SSID: The wireless network name.
