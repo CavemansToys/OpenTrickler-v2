@@ -96,17 +96,19 @@ bool eeprom_init(void) {
     cat24c256_eeprom_init();
 
     // Read data revision, if match then move forward
-    eeprom_error_code_e error_code = eeprom_read(EEPROM_METADATA_BASE_ADDR, (uint8_t *) &metadata, sizeof(eeprom_metadata_t));
-    if (error_code == EEPROM_ERROR_FAILED_TO_READ) {
+    is_ok = eeprom_read(EEPROM_METADATA_BASE_ADDR, (uint8_t *) &metadata, sizeof(eeprom_metadata_t));
+    if (!is_ok) {
         printf("Unable to read from EEPROM at address %x\n", EEPROM_METADATA_BASE_ADDR);
         return false;
     }
 
-    // Validate CRC32
-    if (error_code == EEPROM_ERROR_CRC_MISMATCH) {
-        printf("EEPROM metadata CRC32 mismatch, data might be corrupted or updated\n");
-        
-        // Fill with default error
+    if (metadata.eeprom_metadata_rev != EEPROM_METADATA_REV) {
+        // Do some data migration or erase the data
+        // printf("EEPROM data revision: %x, Firmware EEPROM data revision: %x, Requires migration\n", metadata.eeprom_metadata_rev, EEPROM_METADATA_REV);
+
+        // Update some data
+        metadata.eeprom_metadata_rev = EEPROM_METADATA_REV;
+
         // Generate id
         char buf[9];
         snprintf(buf, sizeof(buf), "%08lX", rnd() & 0xffffffff);
@@ -182,4 +184,3 @@ bool eeprom_get_board_id(char ** board_id_buffer, size_t bytes_to_copy) {
 
     return true;
 }
-
