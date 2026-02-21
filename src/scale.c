@@ -23,7 +23,10 @@ extern scale_handle_t radwag_ps_r2_scale_handle;
 extern scale_handle_t sartorius_scale_handle;
 
 scale_config_t scale_config;
-
+const eeprom_scale_data_t default_scale_persistent_config = {
+    .scale_driver = SCALE_DRIVER_AND_FXI,
+    .scale_baudrate = BAUDRATE_19200,
+};
 
 
 void set_scale_driver(scale_driver_t scale_driver) {
@@ -143,25 +146,10 @@ bool scale_init() {
     bool is_ok;
 
     // Read config from EEPROM
-    is_ok = eeprom_read(EEPROM_SCALE_CONFIG_BASE_ADDR, (uint8_t *) &scale_config.persistent_config, sizeof(eeprom_scale_data_t));
+    is_ok = load_config(EEPROM_SCALE_CONFIG_BASE_ADDR, &scale_config.persistent_config, &default_scale_persistent_config, sizeof(scale_config.persistent_config), EEPROM_SCALE_DATA_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_SCALE_CONFIG_BASE_ADDR);
-        return false;
-    }
-
-    // If the revision doesn't match then re-initialize the config
-    if (scale_config.persistent_config.scale_data_rev != EEPROM_SCALE_DATA_REV) {
-
-        scale_config.persistent_config.scale_data_rev = EEPROM_SCALE_DATA_REV;
-        scale_config.persistent_config.scale_driver = SCALE_DRIVER_AND_FXI;
-        scale_config.persistent_config.scale_baudrate = BAUDRATE_19200;
-
-        // Write data back
-        is_ok = scale_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_SCALE_CONFIG_BASE_ADDR);
-            return false;
-        }
+        printf("Unable to read scale configuration\n");
+        return is_ok;
     }
 
     // Initialize UART
@@ -198,7 +186,7 @@ bool scale_init() {
 
 
 bool scale_config_save() {
-    bool is_ok = eeprom_write(EEPROM_SCALE_CONFIG_BASE_ADDR, (uint8_t *) &scale_config.persistent_config, sizeof(eeprom_scale_data_t));
+    bool is_ok = save_config(EEPROM_SCALE_CONFIG_BASE_ADDR, &scale_config.persistent_config, sizeof(eeprom_scale_data_t));
     return is_ok;
 }
 

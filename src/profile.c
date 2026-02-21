@@ -9,56 +9,77 @@ eeprom_profile_data_t profile_data;
 
 extern void swuart_calcCRC(uint8_t* datagram, uint8_t datagramLength);
 
+const eeprom_profile_data_t default_profile_data = {
+    .profiles[0] = {
+        .compatibility = 0,
+        .name = "AR2208,gr",
 
-const profile_t default_ar_2208_profile = {
-    .compatibility = 0,
+        .coarse_kp = 0.025f,
+        .coarse_ki = 0.0f,
+        .coarse_kd = 0.3f,
+        .coarse_min_flow_speed_rps = 0.1f,
+        .coarse_max_flow_speed_rps = 5.0f,
 
-    .name = "AR2208,gr",
+        .fine_kp = 2.0f,
+        .fine_ki = 0.0f,
+        .fine_kd = 10.0f,
+        .fine_min_flow_speed_rps = 0.08f,
+        .fine_max_flow_speed_rps = 5.0f,
+    },
+    .profiles[1] = {
+        .compatibility = 0,
+        .name = "AR2209,gr",
 
-    .coarse_kp = 0.025f,
-    .coarse_ki = 0.0f,
-    .coarse_kd = 0.3f,
-    .coarse_min_flow_speed_rps = 0.1f,
-    .coarse_max_flow_speed_rps = 5.0f,
+        .coarse_kp = 0.05f,
+        .coarse_ki = 0.0f,
+        .coarse_kd = 0.3f,
+        .coarse_min_flow_speed_rps = 0.1f,
+        .coarse_max_flow_speed_rps = 8.0f,
 
-    .fine_kp = 2.0f,
-    .fine_ki = 0.0f,
-    .fine_kd = 10.0f,
-    .fine_min_flow_speed_rps = 0.08f,
-    .fine_max_flow_speed_rps = 5.0f,
+        .fine_kp = 0.8f,
+        .fine_ki = 0.0f,
+        .fine_kd = 15.0f,
+        .fine_min_flow_speed_rps = 0.08f,
+        .fine_max_flow_speed_rps = 2.0f,
+    },
+    .profiles[2] = {
+        .compatibility = 0,
+        .name = "8208XBR,gr",
+
+        .coarse_kp = 0.05f,
+        .coarse_ki = 0.0f,
+        .coarse_kd = 0.3f,
+        .coarse_min_flow_speed_rps = 0.1f,
+        .coarse_max_flow_speed_rps = 5.0f,
+
+        .fine_kp = 2.0f,
+        .fine_ki = 0.0f,
+        .fine_kd = 12.0f,
+        .fine_min_flow_speed_rps = 0.06f,
+        .fine_max_flow_speed_rps = 5.0f,
+    },
+    .profiles[3] = {
+        .compatibility = 0,
+        .name = "Benchmark2,gr",
+
+        .coarse_kp = 0.06f,
+        .coarse_ki = 0.0f,
+        .coarse_kd = 0.3f,
+        .coarse_min_flow_speed_rps = 0.1f,
+        .coarse_max_flow_speed_rps = 5.0f,
+
+        .fine_kp = 0.8f,
+        .fine_ki = 0.0f,
+        .fine_kd = 15.0f,
+        .fine_min_flow_speed_rps = 0.08f,
+        .fine_max_flow_speed_rps = 5.0f,
+    },
 };
-
-
-const profile_t default_ar_2209_profile = {
-    .compatibility = 0,
-
-    .name = "AR2209,gr",
-
-    .coarse_kp = 0.05f,
-    .coarse_ki = 0.0f,
-    .coarse_kd = 0.3f,
-    .coarse_min_flow_speed_rps = 0.1f,
-    .coarse_max_flow_speed_rps = 8.0f,
-
-    .fine_kp = 0.8f,
-    .fine_ki = 0.0f,
-    .fine_kd = 15.0f,
-
-    .fine_min_flow_speed_rps = 0.08f,
-    .fine_max_flow_speed_rps = 2.0f,
-};
-
-
 
 
 bool profile_data_save() {
-    bool is_ok = eeprom_write(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
-    if (!is_ok) {
-        printf("Unable to write to EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
-        return false;
-    }
-
-    return true;
+    bool is_ok = save_config(EEPROM_PROFILE_DATA_BASE_ADDR, &profile_data, sizeof(profile_data));
+    return is_ok;
 }
 
 
@@ -67,36 +88,11 @@ bool profile_data_init() {
 
     // Read profile index table
     memset(&profile_data, 0x0, sizeof(eeprom_profile_data_t));
-    is_ok = eeprom_read(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
+    is_ok = load_config(EEPROM_PROFILE_DATA_BASE_ADDR, &profile_data, &default_profile_data, sizeof(profile_data), EEPROM_PROFILE_DATA_REV);
 
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
+        printf("Unable to read profile data\n");
         return false;
-    }
-
-    if (profile_data.profile_data_rev != EEPROM_PROFILE_DATA_REV) {
-        profile_data.profile_data_rev = EEPROM_PROFILE_DATA_REV;
-        // Set default selected profile
-        profile_data.current_profile_idx = 0;
-
-        // Reset all profiles
-        memset(profile_data.profiles, 0x0, sizeof(profile_data.profiles));
-
-        // Copy two default profiles
-        memcpy(&profile_data.profiles[0], &default_ar_2208_profile, sizeof(profile_t));
-        memcpy(&profile_data.profiles[1], &default_ar_2209_profile, sizeof(profile_t));
-
-        // Update default profile data
-        for (uint8_t idx=2; idx < MAX_PROFILE_CNT; idx+=1) {
-            profile_t * selected_profile = &profile_data.profiles[idx];
-
-            // Provide default name
-            snprintf(selected_profile->name, PROFILE_NAME_MAX_LEN, 
-                     "NewProfile%d", idx);
-        }
-
-        // Write back
-        profile_data_save();
     }
 
     // Register to eeprom save all

@@ -45,6 +45,10 @@
 
 // Configs
 mini_12864_module_config_t mini_12864_module_config;
+const mini_12864_module_config_t default_mini_12864_module_config = {
+    .inverted_encoder_direction = false,
+    .display_rotation = DISPLAY_ROTATION_0,
+};
 
 // Statics (to be shared between IRQ and tasks)
 QueueHandle_t encoder_event_queue = NULL;
@@ -174,7 +178,7 @@ void _isr_on_button_rst_update(uint gpio, uint32_t event) {
 
 
 bool mini_12864_module_config_save() {
-    bool is_ok = eeprom_write(EEPROM_MINI_12864_CONFIG_BASE_ADDR, (uint8_t *) &mini_12864_module_config, sizeof(mini_12864_module_config));
+    bool is_ok = save_config(EEPROM_MINI_12864_CONFIG_BASE_ADDR, &mini_12864_module_config, sizeof(mini_12864_module_config));
     return is_ok;
 }
 
@@ -184,25 +188,10 @@ bool mini_12864_module_init() {
 
     // Read configuration
     memset(&mini_12864_module_config, 0x0, sizeof(mini_12864_module_config));
-    is_ok = eeprom_read(EEPROM_MINI_12864_CONFIG_BASE_ADDR, (uint8_t *)&mini_12864_module_config, sizeof(mini_12864_module_config));
+    is_ok = load_config(EEPROM_MINI_12864_CONFIG_BASE_ADDR, &mini_12864_module_config, &default_mini_12864_module_config, sizeof(mini_12864_module_config), EEPROM_MINI_12864_MODULE_DATA_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_MINI_12864_CONFIG_BASE_ADDR);
+        printf("Unable to read mini12864 configuration\n");
         return false;
-    }
-
-    if (mini_12864_module_config.data_rev != EEPROM_MINI_12864_MODULE_DATA_REV) {
-        mini_12864_module_config.data_rev = EEPROM_MINI_12864_MODULE_DATA_REV;
-
-        // Set default
-        mini_12864_module_config.inverted_encoder_direction = false;
-        mini_12864_module_config.display_rotation = DISPLAY_ROTATION_0;
-
-        // Write back
-        is_ok = mini_12864_module_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_MINI_12864_CONFIG_BASE_ADDR);
-            return false;
-        }
     }
 
     // Register to eeprom save all

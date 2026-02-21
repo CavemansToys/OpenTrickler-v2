@@ -133,7 +133,7 @@ void servo_gate_control_task(void * p) {
 
 
 bool servo_gate_config_save(void) {
-    bool is_ok = eeprom_write(EEPROM_SERVO_GATE_CONFIG_BASE_ADDR, (uint8_t *) &servo_gate.eeprom_servo_gate_config, sizeof(eeprom_servo_gate_config_t));
+    bool is_ok = save_config(EEPROM_SERVO_GATE_CONFIG_BASE_ADDR, &servo_gate.eeprom_servo_gate_config, sizeof(servo_gate.eeprom_servo_gate_config));
     return is_ok;
 }
 
@@ -142,21 +142,10 @@ bool servo_gate_config_init() {
 
     // Read charge mode config from EEPROM
     memset(&servo_gate, 0x0, sizeof(servo_gate));
-    is_ok = eeprom_read(EEPROM_SERVO_GATE_CONFIG_BASE_ADDR, (uint8_t *)&servo_gate.eeprom_servo_gate_config, sizeof(eeprom_servo_gate_config_t));
+    is_ok = load_config(EEPROM_SERVO_GATE_CONFIG_BASE_ADDR, &servo_gate.eeprom_servo_gate_config, &default_eeprom_servo_gate_config, sizeof(servo_gate.eeprom_servo_gate_config), EEPROM_SERVO_GATE_CONFIG_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_SERVO_GATE_CONFIG_BASE_ADDR);
+        printf("Unable to read servo gate configuration\n");
         return false;
-    }
-
-    if (servo_gate.eeprom_servo_gate_config.servo_gate_config_rev != EEPROM_SERVO_GATE_CONFIG_REV) {
-        memcpy(&servo_gate.eeprom_servo_gate_config, &default_eeprom_servo_gate_config, sizeof(eeprom_servo_gate_config_t));
-
-        // Write back
-        is_ok = servo_gate_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_SERVO_GATE_CONFIG_BASE_ADDR);
-            return false;
-        }
     }
 
     // Register to eeprom save all

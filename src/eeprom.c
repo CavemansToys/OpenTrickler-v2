@@ -95,31 +95,19 @@ bool eeprom_init(void) {
     
     cat24c256_eeprom_init();
 
-    // Read data revision, if match then move forward
-    is_ok = eeprom_read(EEPROM_METADATA_BASE_ADDR, (uint8_t *) &metadata, sizeof(eeprom_metadata_t));
+    // Generate a default metadata (in case the metadata is invalid)
+    eeprom_metadata_t default_eeprom_metadata;
+
+    // Generate id
+    char buf[9];
+    snprintf(buf, sizeof(buf), "%08lX", rnd() & 0xffffffff);
+    memcpy(default_eeprom_metadata.unique_id, buf, sizeof(default_eeprom_metadata.unique_id));
+
+    // Load eeprom data
+    memset(&metadata, 0x0, sizeof(metadata));
+    is_ok = load_config(EEPROM_METADATA_BASE_ADDR, &metadata, &default_eeprom_metadata, sizeof(metadata), EEPROM_METADATA_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_METADATA_BASE_ADDR);
-        return false;
-    }
-
-    if (metadata.eeprom_metadata_rev != EEPROM_METADATA_REV) {
-        // Do some data migration or erase the data
-        // printf("EEPROM data revision: %x, Firmware EEPROM data revision: %x, Requires migration\n", metadata.eeprom_metadata_rev, EEPROM_METADATA_REV);
-
-        // Update some data
-        metadata.eeprom_metadata_rev = EEPROM_METADATA_REV;
-
-        // Generate id
-        char buf[9];
-        snprintf(buf, sizeof(buf), "%08lX", rnd() & 0xffffffff);
-        memcpy(metadata.unique_id, buf, sizeof(metadata.unique_id));
-
-        // Write data back
-        is_ok = eeprom_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_METADATA_BASE_ADDR);
-            return false;
-        }
+        printf("Unable to read EEPROM configuration\n");
     }
 
     // Register to eeprom save all
@@ -129,7 +117,7 @@ bool eeprom_init(void) {
 }
 
 bool eeprom_config_save() {
-    bool is_ok = eeprom_write(EEPROM_METADATA_BASE_ADDR, (uint8_t *) &metadata, sizeof(eeprom_metadata_t));
+    bool is_ok = save_config(EEPROM_METADATA_BASE_ADDR, &metadata, sizeof(metadata));
     return is_ok;
 }
 

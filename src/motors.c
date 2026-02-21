@@ -37,21 +37,37 @@ motor_config_t coarse_trickler_motor_config;
 motor_config_t fine_trickler_motor_config;
 
 
-const motor_persistent_config_t default_motor_persistent_config = {
-    .current_ma = 500,                  // 500 mA
-    .full_steps_per_rotation = 200,     // 200: 1.8 deg stepper, 400: 0.9 deg stepper
-    .max_speed_rps = 5,                 // Maximum speed before the stepper runs out
-    .microsteps = 256,                  // Default to maximum that the driver supports
-    .r_sense = 110,                     // 0.110 ohm sense resistor the stepper driver
+const eeprom_motor_data_t default_motor_data = {
+    // Motor 0 is coarse trickler
+    .motor_data[0] = {
+        .full_steps_per_rotation = 200,     // 200: 1.8 deg stepper, 400: 0.9 deg stepper
+        .current_ma = 800,                  // 800 mA peak current
+        .microsteps = 256,                  // Maximum microstep that TMC2209 supports
+        .max_speed_rps = 5,                 // Maximum speed before the stepper starts to lose step
+        .r_sense = 110,                     // Default sensing resistor (110ohm is used for stanard TMC2209 modules)
 
-    .angular_acceleration = 50,         // In rev/s^2
-    .min_speed_rps = 0.1,               // Minimum speed for powder to drop
-    .gear_ratio = 1.0f,                 // The speed ratio between the driver and driven gear
+        .angular_acceleration = 50,         // In rev/s^2
+        .min_speed_rps = 0.08,              // Minimum speed for powder to drop, can be overridden by the profile
+        .gear_ratio = 1.25f,                // 40:32 gear ratio for coarse trickler motor
 
-    .inverted_direction = false,        // Invert the direction if set to true
-    .inverted_enable = false,           // Invert the enable flag if set to true
+        .inverted_direction = false,        // Invert the rotation direction if set to true
+        .inverted_enable = false,           // Invert the enable flag if set to true
+    },
+    .motor_data[1] = {
+        .full_steps_per_rotation = 200,     // 200: 1.8 deg stepper, 400: 0.9 deg stepper
+        .current_ma = 800,                  // 800 mA peak current
+        .microsteps = 256,                  // Maximum microstep that TMC2209 supports
+        .max_speed_rps = 5,                 // Maximum speed before the stepper starts to lose step
+        .r_sense = 110,                     // Default sensing resistor (110ohm is used for stanard TMC2209 modules)
+
+        .angular_acceleration = 50,         // In rev/s^2
+        .min_speed_rps = 0.01,              // Minimum speed for powder to drop, can be overridden by the profile
+        .gear_ratio = 1.818f,               // Fine trickler gear ratio
+
+        .inverted_direction = false,        // Invert the rotation direction if set to true
+        .inverted_enable = false,           // Invert the enable flag if set to true
+    },
 };
-
 
 
 // UART Control functions
@@ -326,30 +342,11 @@ bool motor_config_init(void) {
 
     // Read motor config from EEPROM
     eeprom_motor_data_t eeprom_motor_data;
-    is_ok = eeprom_read(EEPROM_MOTOR_CONFIG_BASE_ADDR, (uint8_t *)&eeprom_motor_data, sizeof(eeprom_motor_data_t));
+    memset(&eeprom_motor_data, 0x0, sizeof(eeprom_motor_data));
+    is_ok = load_config(EEPROM_MOTOR_CONFIG_BASE_ADDR, &eeprom_motor_data, &default_motor_data, sizeof(eeprom_motor_data), EEPROM_MOTOR_DATA_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_MOTOR_CONFIG_BASE_ADDR);
-        return false;
-    }
-
-    // If the revision doesn't match then re-initialize the config
-    if (eeprom_motor_data.motor_data_rev != EEPROM_MOTOR_DATA_REV) {
-        memcpy(&eeprom_motor_data.motor_data[0], &default_motor_persistent_config, sizeof(motor_persistent_config_t));
-        memcpy(&eeprom_motor_data.motor_data[1], &default_motor_persistent_config, sizeof(motor_persistent_config_t));
-        eeprom_motor_data.motor_data_rev = EEPROM_MOTOR_DATA_REV;
-
-        // Update the gear ratio
-        // Coarse Trickler (default 40:32)
-        eeprom_motor_data.motor_data[0].gear_ratio = 1.25f;
-        // Fine Trickler (default 40:19)
-        eeprom_motor_data.motor_data[1].gear_ratio = 2.1052631f;
-
-        // Write data back
-        is_ok = eeprom_write(EEPROM_MOTOR_CONFIG_BASE_ADDR, (uint8_t *) &eeprom_motor_data, sizeof(eeprom_motor_data_t));
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_MOTOR_CONFIG_BASE_ADDR);
-            return false;
-        }
+        printf("Unable to read motor configuration\n");
+        return is_ok;
     }
     
     // Copy the initialized data back to the stack
@@ -372,13 +369,13 @@ bool motor_config_save() {
     eeprom_motor_data_t eeprom_motor_data;
 
     // Set the versionf 
-    eeprom_motor_data.motor_data_rev = EEPROM_MOTOR_DATA_REV;
+    eeprom_motor_data.motor_data_rev = 0;  // We don't use data rev anymore
 
     // Copy the live data to the EEPROM structure
     memcpy(&eeprom_motor_data.motor_data[0], &coarse_trickler_motor_config.persistent_config, sizeof(motor_persistent_config_t));
     memcpy(&eeprom_motor_data.motor_data[1], &fine_trickler_motor_config.persistent_config, sizeof(motor_persistent_config_t));
 
-    is_ok = eeprom_write(EEPROM_MOTOR_CONFIG_BASE_ADDR, (uint8_t *) &eeprom_motor_data, sizeof(eeprom_motor_data_t));
+    is_ok = save_config(EEPROM_MOTOR_CONFIG_BASE_ADDR, &eeprom_motor_data, sizeof(eeprom_motor_data_t));
 
     return is_ok;
 }
