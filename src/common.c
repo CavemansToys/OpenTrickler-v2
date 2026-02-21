@@ -107,7 +107,7 @@ uint32_t crc32_wrapper(uint8_t * data, size_t length, size_t offset) {
 }
 
 
-bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t size) {
+bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t size, uint16_t rev_validation) {
     bool is_ok;
     uint32_t calculated_crc32;
 
@@ -117,7 +117,7 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
     uint8_t * buf = malloc(read_size);
 
     if (!buf) {
-        printf("Unable to allocate buffer with size: %lld", read_size);
+        printf("Unable to allocate buffer with size: %d", read_size);
         return false;
     }
 
@@ -130,6 +130,28 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
         free(buf);
         return is_ok;
     }
+
+    /**
+     * FIXME: This is only for backward compatibility purpose: 
+     *  In the past (pre 1.17) the code relies on the revision number (uint16_t) to identify the change of configuration structure.
+     *  Now we are switching to CRC32 based, but we still want the old configuration to be migrated. In this case the migration is 
+     *      achieved by accepting rev validation, then erase the validation from the subsequent write operation. If the rev validation
+     *      failed then the code will valiate CRC32 instead. 
+     */
+    uint16_t *received_rev_addr = (uint16_t *) buf;
+    if (*received_rev_addr == rev_validation) {
+        *received_rev_addr = 0;  // erase the rev from stored data
+
+        // Accept the buffer
+        memcpy(cfg, buf, size);
+        free(buf);
+
+        // Save it back
+        is_ok = save_config(addr, cfg, size);
+
+        return is_ok;
+    }
+    // Following are the new validation method based on crc32
 
     // Verify crc
     uint32_t received_crc32 = 0;
@@ -166,7 +188,7 @@ bool save_config(uint16_t addr, void * cfg, size_t size) {
     uint8_t * buf = malloc(write_size);
 
     if (!buf) {
-        printf("Unable to allocate buffer with size: %lld", write_size);
+        printf("Unable to allocate buffer with size: %d", write_size);
         return false;
     }
 
