@@ -168,7 +168,7 @@ bool eeprom_get_board_id(char ** board_id_buffer, size_t bytes_to_copy) {
         return false;
     }
 
-    memcpy(board_id_buffer, metadata.unique_id, bytes_to_copy);
+    memcpy(*board_id_buffer, metadata.unique_id, bytes_to_copy);
 
     return true;
 }

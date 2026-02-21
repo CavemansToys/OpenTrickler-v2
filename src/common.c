@@ -102,9 +102,6 @@ uint32_t software_crc32(void * data, size_t length) {
 
     return crc ^ 0xffffffff;
 }
-uint32_t crc32_wrapper(uint8_t * data, size_t length, size_t offset) {
-    return software_crc32(data + offset, length - offset);
-}
 
 
 bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t size, uint16_t rev_validation) {
@@ -138,9 +135,10 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
      *      achieved by accepting rev validation, then erase the validation from the subsequent write operation. If the rev validation
      *      failed then the code will valiate CRC32 instead. 
      */
-    uint16_t *received_rev_addr = (uint16_t *) buf;
-    if (*received_rev_addr == rev_validation) {
-        *received_rev_addr = 0;  // erase the rev from stored data
+    uint16_t received_rev;
+    memcpy(&received_rev, buf, sizeof(received_rev));
+    if (received_rev == rev_validation) {
+        memcpy(buf, &received_rev, sizeof(received_rev));  // erase the rev from stored data
 
         // Accept the buffer
         memcpy(cfg, buf, size);
@@ -156,7 +154,7 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
     // Verify crc
     uint32_t received_crc32 = 0;
 
-    calculated_crc32 = crc32_wrapper(buf, size, 0);
+    calculated_crc32 = software_crc32(buf, size);
     memcpy(&received_crc32, buf + size, sizeof(received_crc32));
 
     if (calculated_crc32 != received_crc32) {
@@ -193,7 +191,7 @@ bool save_config(uint16_t addr, void * cfg, size_t size) {
     }
 
     // Calculate CRC
-    calculated_crc32 = crc32_wrapper(cfg, size, 0);
+    calculated_crc32 = software_crc32(cfg, size);
 
     // Build write buffer by copying configuration appended with crc32
     memcpy(buf, cfg, size);
