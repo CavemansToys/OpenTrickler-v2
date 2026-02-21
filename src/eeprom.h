@@ -18,9 +18,13 @@
 #define EEPROM_SERVO_GATE_CONFIG_BASE_ADDR     10 * 1024       // 10k
 
 
+#define EEPROM_METADATA_REV                     2              // 16 byte 
+
+
 typedef struct {
+    uint16_t eeprom_metadata_rev;
     char unique_id[8];
-} eeprom_metadata_t;
+} __attribute__((packed)) eeprom_metadata_t;
 
 typedef enum {
     EEPROM_OK = 0,
@@ -38,7 +42,7 @@ extern "C" {
 
 bool eeprom_init(void);
 bool eeprom_config_save();
-eeprom_error_code_e eeprom_read(uint16_t data_addr, uint8_t * data, size_t len);
+bool eeprom_read(uint16_t data_addr, uint8_t * data, size_t len);
 bool eeprom_write(uint16_t data_addr, uint8_t * data, size_t len);
 
 bool eeprom_get_board_id(char ** board_id_buffer, size_t bytes_to_copy);

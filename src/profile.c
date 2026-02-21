@@ -53,7 +53,12 @@ const profile_t default_ar_2209_profile = {
 
 bool profile_data_save() {
     bool is_ok = eeprom_write(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
-    return is_ok;
+    if (!is_ok) {
+        printf("Unable to write to EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
+        return false;
+    }
+
+    return true;
 }
 
 
@@ -62,17 +67,15 @@ bool profile_data_init() {
 
     // Read profile index table
     memset(&profile_data, 0x0, sizeof(eeprom_profile_data_t));
-    
-    eeprom_error_code_e error_code = eeprom_read(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
+    is_ok = eeprom_read(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
 
-    if (error_code == EEPROM_ERROR_FAILED_TO_READ) {
-        printf("Unable to read from EEPROM at address %x, error code: %d\n", EEPROM_PROFILE_DATA_BASE_ADDR, error_code);
+    if (!is_ok) {
+        printf("Unable to read from EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
         return false;
     }
 
-    if (error_code == EEPROM_ERROR_CRC_MISMATCH) {
-        printf("EEPROM profile data CRC32 mismatch, data might be corrupted or updated\n");
-
+    if (profile_data.profile_data_rev != EEPROM_PROFILE_DATA_REV) {
+        profile_data.profile_data_rev = EEPROM_PROFILE_DATA_REV;
         // Set default selected profile
         profile_data.current_profile_idx = 0;
 
@@ -93,11 +96,7 @@ bool profile_data_init() {
         }
 
         // Write back
-        is_ok = profile_data_save();
-        if (!is_ok) {
-            printf("Unable to write to EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
-            return false;
-        }
+        profile_data_save();
     }
 
     // Register to eeprom save all
@@ -131,7 +130,7 @@ void profile_update_checksum() {
 bool http_rest_profile_config(struct fs_file *file, int num_params, char *params[], char *values[]) {
     // Mappings:
     // pf (int): profile index
-    // p0 (int): rev (deprecated)
+    // p0 (int): rev
     // p1 (int): compatibility
     // p2 (str): name
     // p3 (float): coarse_kp
@@ -168,8 +167,7 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
         // Control
         for (int idx = 0; idx < num_params; idx += 1) {
             if (strcmp(params[idx], "p0") == 0) {
-                // current_profile->rev = strtol(values[idx], NULL, 10);
-                // FIXME: rev is deprecated
+                current_profile->rev = strtol(values[idx], NULL, 10);
             }
             else if (strcmp(params[idx], "p1") == 0) {
                 current_profile->compatibility = strtol(values[idx], NULL, 10);
@@ -223,7 +221,7 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
                  "{\"pf\":%d,\"p0\":%ld,\"p1\":%ld,\"p2\":\"%s\",\"p3\":%0.3f,\"p4\":%0.3f,\"p5\":%0.3f,\"p6\":%0.3f,\"p7\":%0.3f,\"p8\":%0.3f,\"p9\":%0.3f,\"p10\":%0.3f,\"p11\":%0.3f,\"p12\":%0.3f}",
                  http_json_header,
                  profile_idx, 
-                 0,  // current_profile->rev,  rev is deprecated
+                 current_profile->rev,
                  current_profile->compatibility,
                  current_profile->name,
                  current_profile->coarse_kp,

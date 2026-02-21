@@ -7,6 +7,8 @@
 #include "pico/time.h"
 #include "hardware/dma.h"
 
+#include "eeprom.h"
+
 const char * http_json_header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
 
 
@@ -102,4 +104,88 @@ uint32_t software_crc32(void * data, size_t length) {
 }
 uint32_t crc32_wrapper(uint8_t * data, size_t length, size_t offset) {
     return software_crc32(data + offset, length - offset);
+}
+
+
+bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t size) {
+    bool is_ok;
+    uint32_t calculated_crc32;
+
+
+    // Prepare rx buffer
+    size_t read_size = size + sizeof(calculated_crc32);
+    uint8_t * buf = malloc(read_size);
+
+    if (!buf) {
+        printf("Unable to allocate buffer with size: %lld", read_size);
+        return false;
+    }
+
+    // Read data
+    is_ok = eeprom_read(addr, buf, read_size);
+
+    // Unable to read from eeprom, then we will quit
+    if (!is_ok) {
+        printf("Unable to read from addr: 0x%04x", addr);
+        free(buf);
+        return is_ok;
+    }
+
+    // Verify crc
+    uint32_t received_crc32 = 0;
+
+    calculated_crc32 = crc32_wrapper(buf, size, 0);
+    memcpy(&received_crc32, buf + size, sizeof(received_crc32));
+
+    if (calculated_crc32 != received_crc32) {
+        // if CRC mistmatch then we will apply the default configuration
+        printf("CRC32 mismatch at address %x, received: %08lX, calculated: %08lX\n", addr, received_crc32, calculated_crc32);
+
+        free(buf);
+        memcpy(cfg, default_cfg, size);
+        return save_config(addr, cfg, size);
+    }
+    else {
+        printf("Configuration read successfully");
+
+        // Copy from buffer to config
+        memcpy(cfg, buf, size);
+        free(buf);
+    }
+
+    return true;
+}
+
+
+bool save_config(uint16_t addr, void * cfg, size_t size) {
+    bool is_ok;
+    uint32_t calculated_crc32;
+
+    // Copy data into buffer then append with crc32
+    size_t write_size = size + sizeof(calculated_crc32);
+    uint8_t * buf = malloc(write_size);
+
+    if (!buf) {
+        printf("Unable to allocate buffer with size: %lld", write_size);
+        return false;
+    }
+
+    // Calculate CRC
+    calculated_crc32 = crc32_wrapper(cfg, size, 0);
+
+    // Build write buffer by copying configuration appended with crc32
+    memcpy(buf, cfg, size);
+    memcpy(buf + size, &calculated_crc32, sizeof(calculated_crc32));
+
+    // Write to EEPROM
+    is_ok = eeprom_write(addr, buf, write_size);
+    if (!is_ok) {
+        printf("Unable to write to addr: 0x%04x", addr);
+    }
+    else {
+        printf("Configuration write successfully");
+    }
+
+    free(buf);
+    return is_ok;
 }
