@@ -29,6 +29,14 @@ void _generic_scale_listener_task(void *p) {
         // Read all available data
         while (uart_is_readable(SCALE_UART)) {
             char ch = uart_getc(SCALE_UART);
+
+            // Prevent buffer overflow
+            if (rx_buffer_idx >= sizeof(rx_buffer) - 1) {
+                // Reset buffer index
+                rx_buffer_idx = 0;
+            }
+
+            // Accept the buffer
             rx_buffer[rx_buffer_idx++] = ch;
 
             // Stop condition 1: When \n is received
@@ -36,32 +44,32 @@ void _generic_scale_listener_task(void *p) {
                 // Null terminate the string
                 rx_buffer[rx_buffer_idx] = '\0';
 
-                // Reset buffer index
-                rx_buffer_idx = 0;
-            }
-            // Stop condition 2: Buffer full
-            else if (rx_buffer_idx >= sizeof(rx_buffer) - 1) {
-                // Null terminate the string
-                rx_buffer[rx_buffer_idx] = '\0';
+                // Parse the received string to float
+                char *startptr = rx_buffer;
+                char *endptr;
 
-                // Reset buffer index
-                rx_buffer_idx = 0;
-            }
-            else {
-                // Continue receiving
-                continue;
-            }
-
-            // Parse the received string to float
-            char *endptr;
-            float weight = strtof(rx_buffer, &endptr);
-
-            // If the conversion is successful then post the measurement.
-            if (endptr != rx_buffer) {
-                scale_config.current_scale_measurement = weight;
-                if (scale_config.scale_measurement_ready) {
-                    xSemaphoreGive(scale_config.scale_measurement_ready);
+                // 1. look for the start of a number: a digit, a decimal point, or a sign
+                //     * Noted this will skip the weight prefix like "ST" etc.
+                //     * Noted the string is already null terminated
+                while (*startptr && 
+                    !isdigit((unsigned char)*startptr) && 
+                    *startptr != '-' && *startptr != '+') {
+                    startptr++;
                 }
+
+                // 2. Attempt to convert from the first numeric-looking character. 
+                float weight = strtof(startptr, &endptr);
+
+                // If the conversion is successful then post the measurement.
+                if (endptr != startptr) {
+                    scale_config.current_scale_measurement = weight;
+                    if (scale_config.scale_measurement_ready) {
+                        xSemaphoreGive(scale_config.scale_measurement_ready);
+                    }
+                }
+
+                // Reset buffer index
+                rx_buffer_idx = 0;
             }
         }
 
