@@ -35,6 +35,16 @@ bool string_to_boolean(char * s);
 
 int float_to_string(char * output_decimal_str, float var, decimal_places_t decimal_places);
 
+/** 
+ * @brief Load configuration from persistent storage. 
+ */
+bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t size, uint16_t rev_validation);
+
+/**
+ * @brief Save configuration to persistent storage
+ */
+bool save_config(uint16_t addr, void * cfg, size_t size);
+
 #ifdef __cplusplus
 }
 #endif

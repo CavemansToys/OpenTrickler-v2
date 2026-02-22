@@ -33,7 +33,7 @@ extern servo_gate_t servo_gate;
 
 
 const eeprom_charge_mode_data_t default_charge_mode_data = {
-    .charge_mode_data_rev = EEPROM_CHARGE_MODE_DATA_REV,
+    .charge_mode_data_rev = 0,
 
     .coarse_stop_threshold = 5,
     .fine_stop_threshold = 0.03,
@@ -322,6 +322,10 @@ void charge_mode_wait_for_complete() {
 
     // Precharge
     if (charge_mode_config.eeprom_charge_mode_data.precharge_enable && servo_gate.gate_state != GATE_DISABLED) {
+        // Set a fixed delay between closing the gate and precharge to allow the gate to fully close
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        // Start the pre-charge
         motor_set_speed(SELECT_COARSE_TRICKLER_MOTOR, charge_mode_config.eeprom_charge_mode_data.precharge_speed_rps);
         vTaskDelay(pdMS_TO_TICKS(charge_mode_config.eeprom_charge_mode_data.precharge_time_ms));
 
@@ -552,27 +556,13 @@ uint8_t charge_mode_menu(bool charge_mode_skip_user_input) {
 
 
 bool charge_mode_config_init(void) {
-    bool is_ok = true;
+    bool is_ok = false;
 
     // Read charge mode config from EEPROM
-    memset(&charge_mode_config, 0x0, sizeof(charge_mode_config));
-    is_ok = eeprom_read(EEPROM_CHARGE_MODE_BASE_ADDR, (uint8_t *)&charge_mode_config.eeprom_charge_mode_data, sizeof(eeprom_charge_mode_data_t));
+    is_ok = load_config(EEPROM_CHARGE_MODE_BASE_ADDR, &charge_mode_config.eeprom_charge_mode_data, &default_charge_mode_data, sizeof(charge_mode_config.eeprom_charge_mode_data), EEPROM_CHARGE_MODE_DATA_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_CHARGE_MODE_BASE_ADDR);
-        return false;
-    }
-
-    if (charge_mode_config.eeprom_charge_mode_data.charge_mode_data_rev != EEPROM_CHARGE_MODE_DATA_REV) {
-        // charge_mode_config.eeprom_charge_mode_data.charge_mode_data_rev = EEPROM_CHARGE_MODE_DATA_REV;
-
-        memcpy(&charge_mode_config.eeprom_charge_mode_data, &default_charge_mode_data, sizeof(eeprom_charge_mode_data_t));
-
-        // Write back
-        is_ok = charge_mode_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_CHARGE_MODE_BASE_ADDR);
-            return false;
-        }
+        printf("Unable to read charge mode configuration\n");
+        return is_ok;
     }
 
     // Register to eeprom save all
@@ -583,7 +573,7 @@ bool charge_mode_config_init(void) {
 
 
 bool charge_mode_config_save(void) {
-    bool is_ok = eeprom_write(EEPROM_CHARGE_MODE_BASE_ADDR, (uint8_t *) &charge_mode_config.eeprom_charge_mode_data, sizeof(eeprom_charge_mode_data_t));
+    bool is_ok = save_config(EEPROM_CHARGE_MODE_BASE_ADDR, &charge_mode_config.eeprom_charge_mode_data, sizeof(eeprom_charge_mode_data_t));
     return is_ok;
 }
 

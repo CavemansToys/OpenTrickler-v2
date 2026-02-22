@@ -19,7 +19,17 @@
         "openOCDLaunchCommands": [
           "adapter speed 5000"
         ],
-        "preLaunchTask": "Flash RP2040"
+        // "preLaunchTask": "Flash RP2040"
+        "postLaunchCommands": [
+          "interrupt",
+          "start",
+          "load",
+          "starti"
+        ],
+        "postRestartCommands": [
+          "break main",
+          "continue"
+        ]
       },
       {
         "name": "Pico 2 (RP2350) Debug (Cortex-Debug)",
@@ -39,7 +49,18 @@
         "openOCDLaunchCommands": [
           "adapter speed 5000"
         ],
-        "preLaunchTask": "Flash RP2350"
+        "postLaunchCommands": [
+          "interrupt",
+          "start",
+          "load",
+          "starti"
+        ],
+        "postRestartCommands": [
+          "break main",
+          "continue"
+        ]
+        
+        // "preLaunchTask": "Flash RP2350"
       }
     ]
   }

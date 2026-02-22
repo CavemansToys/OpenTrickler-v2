@@ -12,6 +12,7 @@
 #include "scale.h"
 #include "common.h"
 
+extern scale_handle_t generic_scale_drv_handle;
 extern scale_handle_t and_fxi_scale_handle;
 extern scale_handle_t steinberg_scale_handle;
 extern scale_handle_t ussolid_scale_handle;
@@ -19,9 +20,15 @@ extern scale_handle_t gng_scale_handle;
 extern scale_handle_t jm_science_scale_handle;
 extern scale_handle_t creedmoor_scale_handle;
 extern scale_handle_t radwag_ps_r2_scale_handle;
+extern scale_handle_t sartorius_scale_handle;
 
 scale_config_t scale_config;
-
+const eeprom_scale_data_t default_scale_persistent_config = {
+    .scale_data_rev = 0,
+    .scale_driver = SCALE_DRIVER_AND_FXI,
+    .scale_baudrate = BAUDRATE_19200,
+    .scale_uart_format = UART_FMT_8D_1S_NP,
+};
 
 
 void set_scale_driver(scale_driver_t scale_driver) {
@@ -64,11 +71,37 @@ void set_scale_driver(scale_driver_t scale_driver) {
             scale_config.scale_handle = &radwag_ps_r2_scale_handle;
             break;
         }
+        case SCALE_DRIVER_SARTORIUS:
+        {
+            scale_config.scale_handle = &sartorius_scale_handle;
+            break;
+        }
+        case SCALE_DRIVER_GENERIC_DRV:
+        {
+            scale_config.scale_handle = &generic_scale_drv_handle;
+            break;
+        }
         default:
-            assert(false);
+            scale_config.scale_handle = &and_fxi_scale_handle;
             break;
     }
 }
+
+void set_scale_uart_format(scale_uart_format_t format) {
+    scale_config.persistent_config.scale_uart_format = format;
+
+    switch (format) {
+        case UART_FMT_8D_1S_NP:
+            uart_set_format(SCALE_UART, 8, 1, UART_PARITY_NONE);
+            break;
+        case UART_FMT_7D_1S_NP:
+            uart_set_format(SCALE_UART, 7, 1, UART_PARITY_NONE);
+            break;
+        default:
+            break;
+    }
+}
+
 
 uint32_t get_scale_baudrate(scale_baudrate_t scale_baudrate) {
     uint32_t baudrate_uint = 0;
@@ -88,6 +121,11 @@ uint32_t get_scale_baudrate(scale_baudrate_t scale_baudrate) {
     }
 
     return baudrate_uint;
+}
+
+void set_scale_baudrate(scale_baudrate_t baudrate) {
+    scale_config.persistent_config.scale_baudrate = baudrate;
+    uart_set_baudrate(SCALE_UART, get_scale_baudrate(baudrate));
 }
 
 
@@ -116,6 +154,9 @@ const char * get_scale_driver_string() {
         case SCALE_DRIVER_RADWAG_PS_R2:
             scale_driver_string = "Radwag PS R2";
             break;
+        case SCALE_DRIVER_SARTORIUS:
+            scale_driver_string = "Sartorius";
+            break;
         default:
             break;
     }
@@ -128,30 +169,18 @@ bool scale_init() {
     bool is_ok;
 
     // Read config from EEPROM
-    is_ok = eeprom_read(EEPROM_SCALE_CONFIG_BASE_ADDR, (uint8_t *) &scale_config.persistent_config, sizeof(eeprom_scale_data_t));
+    is_ok = load_config(EEPROM_SCALE_CONFIG_BASE_ADDR, &scale_config.persistent_config, &default_scale_persistent_config, sizeof(scale_config.persistent_config), EEPROM_SCALE_DATA_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_SCALE_CONFIG_BASE_ADDR);
-        return false;
-    }
-
-    // If the revision doesn't match then re-initialize the config
-    if (scale_config.persistent_config.scale_data_rev != EEPROM_SCALE_DATA_REV) {
-
-        scale_config.persistent_config.scale_data_rev = EEPROM_SCALE_DATA_REV;
-        scale_config.persistent_config.scale_driver = SCALE_DRIVER_AND_FXI;
-        scale_config.persistent_config.scale_baudrate = BAUDRATE_19200;
-
-        // Write data back
-        is_ok = scale_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_SCALE_CONFIG_BASE_ADDR);
-            return false;
-        }
+        printf("Unable to read scale configuration\n");
+        return is_ok;
     }
 
     // Initialize UART
     uart_init(SCALE_UART, get_scale_baudrate(scale_config.persistent_config.scale_baudrate));
-
+    
+    // Set UART format: 7 data bits, 1 stop bit, no parity
+    set_scale_uart_format(scale_config.persistent_config.scale_uart_format);
+    
     gpio_set_function(SCALE_UART_TX, GPIO_FUNC_UART);
     gpio_set_function(SCALE_UART_RX, GPIO_FUNC_UART);
 
@@ -180,7 +209,7 @@ bool scale_init() {
 
 
 bool scale_config_save() {
-    bool is_ok = eeprom_write(EEPROM_SCALE_CONFIG_BASE_ADDR, (uint8_t *) &scale_config.persistent_config, sizeof(eeprom_scale_data_t));
+    bool is_ok = save_config(EEPROM_SCALE_CONFIG_BASE_ADDR, &scale_config.persistent_config, sizeof(eeprom_scale_data_t));
     return is_ok;
 }
 
@@ -246,6 +275,7 @@ bool http_rest_scale_config(struct fs_file *file, int num_params, char *params[]
     // Mappings:
     // s0 (int): driver index
     // s1 (int): baud rate index
+    // s2 (int): uart format index
     // ee (bool): save to eeprom
 
     static char scale_config_to_json_buffer[256];
@@ -259,7 +289,11 @@ bool http_rest_scale_config(struct fs_file *file, int num_params, char *params[]
         }
         else if (strcmp(params[idx], "s1") == 0) {
             scale_baudrate_t baudrate_idx = (scale_baudrate_t) atoi(values[idx]);
-            scale_config.persistent_config.scale_baudrate = baudrate_idx;
+            set_scale_baudrate(baudrate_idx);
+        }
+        else if (strcmp(params[idx], "s2") == 0) {
+            scale_uart_format_t uart_format_idx = (scale_uart_format_t) atoi(values[idx]);
+            set_scale_uart_format(uart_format_idx);
         }
         else if (strcmp(params[idx], "ee") == 0) {
             save_to_eeprom = string_to_boolean(values[idx]);
@@ -274,10 +308,11 @@ bool http_rest_scale_config(struct fs_file *file, int num_params, char *params[]
     snprintf(scale_config_to_json_buffer, 
              sizeof(scale_config_to_json_buffer),
              "%s"
-             "{\"s0\":%d,\"s1\":%d}", 
+             "{\"s0\":%d,\"s1\":%d,\"s2\":%d}", 
              http_json_header,
              scale_config.persistent_config.scale_driver, 
-             scale_config.persistent_config.scale_baudrate);
+             scale_config.persistent_config.scale_baudrate,
+             scale_config.persistent_config.scale_uart_format);
     
     size_t data_length = strlen(scale_config_to_json_buffer);
     file->data = scale_config_to_json_buffer;

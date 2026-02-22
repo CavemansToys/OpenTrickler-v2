@@ -54,6 +54,15 @@ typedef struct {
 
 
 static wireless_config_t wireless_config;
+const eeprom_wireless_metadata_t default_eeprom_wireless_metadata = {
+    .wireless_data_rev = 0,
+    .ssid = "",
+    .pw = "",
+    .auth = AUTH_WPA2_MIXED_PSK,
+    .timeout_ms = 30000,    // 30s
+    .enable = false,
+};
+
 static QueueHandle_t wireless_ctrl_queue;
 
 // Render task
@@ -150,25 +159,10 @@ bool wireless_init() {
     bool is_ok = true;
 
     memset(&wireless_config, 0x00, sizeof(wireless_config_t));
-
-    is_ok = eeprom_read(EEPROM_WIRELESS_CONFIG_BASE_ADDR, (uint8_t *) &wireless_config.eeprom_wireless_metadata, sizeof(eeprom_wireless_metadata_t));
+    is_ok = load_config(EEPROM_WIRELESS_CONFIG_BASE_ADDR, &wireless_config.eeprom_wireless_metadata, &default_eeprom_wireless_metadata, sizeof(wireless_config.eeprom_wireless_metadata), EEPROM_WIRELESS_CONFIG_METADATA_REV);
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_WIRELESS_CONFIG_BASE_ADDR);
+        printf("Unable to read WiFi configuration\n");
         return false;
-    }
-
-    // If the revision doesn't match then re-initialize the config
-    if (wireless_config.eeprom_wireless_metadata.wireless_data_rev != EEPROM_WIRELESS_CONFIG_METADATA_REV) {
-        wireless_config.eeprom_wireless_metadata.wireless_data_rev = EEPROM_WIRELESS_CONFIG_METADATA_REV;
-        wireless_config.eeprom_wireless_metadata.enable = false;
-        wireless_config.eeprom_wireless_metadata.timeout_ms = 30000;  // 30s
-
-        // Write data back
-        is_ok = wireless_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_WIRELESS_CONFIG_BASE_ADDR);
-            return false;
-        }
     }
 
     // Create Wireless handler task
@@ -179,7 +173,7 @@ bool wireless_init() {
 
     // Generate the hostname
     char id[4];
-    eeprom_get_board_id((char **) &id, sizeof(id));
+    eeprom_get_board_id(id, sizeof(id));
     snprintf(host_name, sizeof(host_name), "opentrickler-%s", id);
 
 
@@ -188,7 +182,7 @@ bool wireless_init() {
 
 
 bool wireless_config_save() {
-    bool is_ok = eeprom_write(EEPROM_WIRELESS_CONFIG_BASE_ADDR, (uint8_t *) &wireless_config.eeprom_wireless_metadata, sizeof(eeprom_wireless_metadata_t));
+    bool is_ok = save_config(EEPROM_WIRELESS_CONFIG_BASE_ADDR, &wireless_config.eeprom_wireless_metadata, sizeof(eeprom_wireless_metadata_t));
     return is_ok;
 }
 

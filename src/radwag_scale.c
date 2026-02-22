@@ -91,7 +91,7 @@ void _radwag_scale_listener_task(void *p) {
                     // Optional: Check stability flag
                     // ' ' = stable, '?' = unstable
                     // You can decide whether to accept unstable readings
-                    bool is_stable = (frame.stability == ' ');
+                    // bool is_stable = (frame.stability == ' ');
                     
                     // Data is ready, decode and update
                     scale_config.current_scale_measurement = _decode_measurement_msg(&frame);
