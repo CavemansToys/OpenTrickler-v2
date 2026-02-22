@@ -138,11 +138,12 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
     uint16_t received_rev;
     memcpy(&received_rev, buf, sizeof(received_rev));
     if (received_rev == rev_validation) {
-        memcpy(buf, &received_rev, sizeof(received_rev));  // erase the rev from stored data
-
         // Accept the buffer
         memcpy(cfg, buf, size);
         free(buf);
+
+        // Erase the rev from the stored data to highlight the rev is deprecated
+        memcpy(cfg, 0x0, sizeof(uint16_t));
 
         // Save it back
         is_ok = save_config(addr, cfg, size);
@@ -166,7 +167,7 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
         return save_config(addr, cfg, size);
     }
     else {
-        printf("Configuration read successfully");
+        printf("Configuration read successfully\n");
 
         // Copy from buffer to config
         memcpy(cfg, buf, size);
@@ -186,7 +187,7 @@ bool save_config(uint16_t addr, void * cfg, size_t size) {
     uint8_t * buf = malloc(write_size);
 
     if (!buf) {
-        printf("Unable to allocate buffer with size: %d", write_size);
+        printf("Unable to allocate buffer with size: %d\n", write_size);
         return false;
     }
 
@@ -200,10 +201,10 @@ bool save_config(uint16_t addr, void * cfg, size_t size) {
     // Write to EEPROM
     is_ok = eeprom_write(addr, buf, write_size);
     if (!is_ok) {
-        printf("Unable to write to addr: 0x%04x", addr);
+        printf("Unable to write to addr: 0x%04x\n", addr);
     }
     else {
-        printf("Configuration write successfully");
+        printf("Configuration write successfully\n");
     }
 
     free(buf);

@@ -561,7 +561,7 @@ bool charge_mode_config_init(void) {
     // Read charge mode config from EEPROM
     is_ok = load_config(EEPROM_CHARGE_MODE_BASE_ADDR, &charge_mode_config.eeprom_charge_mode_data, &default_charge_mode_data, sizeof(charge_mode_config.eeprom_charge_mode_data), EEPROM_CHARGE_MODE_DATA_REV);
     if (!is_ok) {
-        printf("Unable to read charge mode configuration");
+        printf("Unable to read charge mode configuration\n");
         return is_ok;
     }
 

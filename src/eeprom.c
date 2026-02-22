@@ -162,13 +162,8 @@ bool eeprom_write(uint16_t data_addr, uint8_t * data, size_t len) {
 }
 
 
-bool eeprom_get_board_id(char ** board_id_buffer, size_t bytes_to_copy) {
-    if (bytes_to_copy > sizeof(metadata.unique_id)) {
-        exit(-1);
-        return false;
-    }
-
-    memcpy(*board_id_buffer, metadata.unique_id, bytes_to_copy);
+bool eeprom_get_board_id(char *board_id_buffer, size_t bytes_to_copy) {
+    memcpy(board_id_buffer, metadata.unique_id, bytes_to_copy);
 
     return true;
 }

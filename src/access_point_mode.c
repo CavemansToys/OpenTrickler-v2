@@ -32,7 +32,7 @@ bool access_point_mode_start() {
     char ap_password[] = "opentrickler";
     char id[4];
 
-    eeprom_get_board_id((char **) &id, sizeof(id));
+    eeprom_get_board_id(id, sizeof(id));
     memset(ap_ssid, 0x0, sizeof(ap_ssid));
     snprintf(ap_ssid, sizeof(ap_ssid), "OpenTrickler%s", id);
     cyw43_arch_enable_ap_mode(ap_ssid, ap_password, CYW43_AUTH_WPA2_AES_PSK);
