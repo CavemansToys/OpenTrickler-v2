@@ -38,7 +38,7 @@ bool eeprom_config_save();
 bool eeprom_read(uint16_t data_addr, uint8_t * data, size_t len);
 bool eeprom_write(uint16_t data_addr, uint8_t * data, size_t len);
 
-bool eeprom_get_board_id(char ** board_id_buffer, size_t bytes_to_copy);
+bool eeprom_get_board_id(char *board_id_buffer, size_t bytes_to_copy);
 
 /*
  * Fill all EEPROM with 0xFF

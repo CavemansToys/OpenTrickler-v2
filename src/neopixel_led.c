@@ -42,6 +42,17 @@ typedef struct {
 
 // Global configuration for neopixel LED instance
 neopixel_led_config_t neopixel_led_config;
+const eeprom_neopixel_led_metadata_t default_neopixel_led_metadata = {
+    .neopixel_data_rev = 0,
+    .default_led_colours = {
+        .led1_colour._raw_colour = RGB_COLOUR_DULL_WHITE,
+        .led2_colour._raw_colour = RGB_COLOUR_DULL_WHITE,
+        .mini12864_backlight_colour._raw_colour = RGB_COLOUR_WHITE,
+    },
+    .pwm_out_led_chain_count = NEOPIXEL_LED_CHAIN_COUNT_2,  // 2x LED chains by default
+    .pwm_out_led_is_rgbw = true,                            // Default to RGBW
+    .pwm_out_led_colour_order = NEOPIXEL_COLOUR_ORDER_RGB,  // Default to RGB colour order
+};
 
 uint32_t urgbw_u32(rgbw_u32_t colour, neopixel_colour_order_t colour_order) {
 
@@ -120,37 +131,11 @@ bool neopixel_led_init(void) {
     
     // Initialize configuration
     memset(&neopixel_led_config, 0x0, sizeof(neopixel_led_config));
+    is_ok = load_config(EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR, &neopixel_led_config.eeprom_neopixel_led_metadata, &default_neopixel_led_metadata, sizeof(neopixel_led_config.eeprom_neopixel_led_metadata), EEPROM_NEOPIXEL_LED_METADATA_REV);
 
-    is_ok = eeprom_read(EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR, (uint8_t *) &neopixel_led_config.eeprom_neopixel_led_metadata, sizeof(eeprom_neopixel_led_metadata_t));
     if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR);
-        return false;
-    }
-
-    // If the revision doesn't match then re-initialize the config
-    if (neopixel_led_config.eeprom_neopixel_led_metadata.neopixel_data_rev != EEPROM_NEOPIXEL_LED_METADATA_REV) {
-        neopixel_led_config.eeprom_neopixel_led_metadata.neopixel_data_rev = EEPROM_NEOPIXEL_LED_METADATA_REV;
-
-        // Default to white
-        neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.led1_colour._raw_colour = RGB_COLOUR_DULL_WHITE;
-        neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.led2_colour._raw_colour = RGB_COLOUR_DULL_WHITE;
-        neopixel_led_config.eeprom_neopixel_led_metadata.default_led_colours.mini12864_backlight_colour._raw_colour = RGB_COLOUR_WHITE;
-
-        // Default to 1 LED chain
-        neopixel_led_config.eeprom_neopixel_led_metadata.pwm_out_led_chain_count = NEOPIXEL_LED_CHAIN_COUNT_2;
-
-        // Default to RGBW
-        neopixel_led_config.eeprom_neopixel_led_metadata.pwm_out_led_is_rgbw = true;
-
-        // Default to RGB colour order
-        neopixel_led_config.eeprom_neopixel_led_metadata.pwm_out_led_colour_order = NEOPIXEL_COLOUR_ORDER_RGB;
-
-        // Write data back
-        is_ok = neopixel_led_config_save();
-        if (!is_ok) {
-            printf("Unable to write to %x\n", EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR);
-            return false;
-        }
+        printf("Unable to read neopixel configuration\n");
+        return is_ok;
     }
 
     // Initialize the mutex
@@ -169,7 +154,7 @@ bool neopixel_led_init(void) {
         &ws2812_program, &pio, &sm, &offset, NEOPIXEL_PIN, 1, true
     );
     if (!is_ok) {
-        printf("Unable to initialize mini12864 Neopixel PIO");
+        printf("Unable to initialize mini12864 Neopixel PIO\n");
         return false;
     }
 
@@ -216,7 +201,7 @@ bool neopixel_led_init(void) {
 
 
 bool neopixel_led_config_save() {
-    bool is_ok = eeprom_write(EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR, (uint8_t *) &neopixel_led_config.eeprom_neopixel_led_metadata, sizeof(eeprom_neopixel_led_metadata_t));
+    bool is_ok = save_config(EEPROM_NEOPIXEL_LED_CONFIG_BASE_ADDR, &neopixel_led_config.eeprom_neopixel_led_metadata, sizeof(eeprom_neopixel_led_metadata_t));
     return is_ok;
 }
 
