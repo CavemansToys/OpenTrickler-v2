@@ -27,6 +27,12 @@ typedef enum {
 
 
 typedef enum {
+    UART_FMT_8D_1S_NP = 0,
+    UART_FMT_7D_1S_NP = 1,
+} scale_uart_format_t;
+
+
+typedef enum {
     SCALE_DRIVER_AND_FXI = 0,
     SCALE_DRIVER_STEINBERG_SBS = 1,
     SCALE_DRIVER_GNG_JJB = 2,
@@ -49,6 +55,7 @@ typedef struct {
     uint16_t scale_data_rev;
     scale_driver_t scale_driver;
     scale_baudrate_t scale_baudrate;
+    scale_uart_format_t scale_uart_format;
 } eeprom_scale_data_t;
 
 
