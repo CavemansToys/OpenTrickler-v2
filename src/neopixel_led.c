@@ -43,6 +43,7 @@ typedef struct {
 // Global configuration for neopixel LED instance
 neopixel_led_config_t neopixel_led_config;
 const eeprom_neopixel_led_metadata_t default_neopixel_led_metadata = {
+    .neopixel_data_rev = 0,
     .default_led_colours = {
         .led1_colour._raw_colour = RGB_COLOUR_DULL_WHITE,
         .led2_colour._raw_colour = RGB_COLOUR_DULL_WHITE,

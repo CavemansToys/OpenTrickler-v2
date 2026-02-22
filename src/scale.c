@@ -24,6 +24,7 @@ extern scale_handle_t sartorius_scale_handle;
 
 scale_config_t scale_config;
 const eeprom_scale_data_t default_scale_persistent_config = {
+    .scale_data_rev = 0,
     .scale_driver = SCALE_DRIVER_AND_FXI,
     .scale_baudrate = BAUDRATE_19200,
 };
@@ -80,7 +81,7 @@ void set_scale_driver(scale_driver_t scale_driver) {
             break;
         }
         default:
-            assert(false);
+            scale_config.scale_handle = &and_fxi_scale_handle;
             break;
     }
 }

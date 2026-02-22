@@ -51,6 +51,7 @@ typedef struct {
 
 static wireless_config_t wireless_config;
 const eeprom_wireless_metadata_t default_eeprom_wireless_metadata = {
+    .wireless_data_rev = 0,
     .ssid = "",
     .pw = "",
     .auth = AUTH_WPA2_MIXED_PSK,

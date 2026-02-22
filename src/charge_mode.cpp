@@ -33,7 +33,7 @@ extern servo_gate_t servo_gate;
 
 
 const eeprom_charge_mode_data_t default_charge_mode_data = {
-    .charge_mode_data_rev = EEPROM_CHARGE_MODE_DATA_REV,
+    .charge_mode_data_rev = 0,
 
     .coarse_stop_threshold = 5,
     .fine_stop_threshold = 0.03,

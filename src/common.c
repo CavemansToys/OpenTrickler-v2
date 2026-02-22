@@ -143,7 +143,7 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
         free(buf);
 
         // Erase the rev from the stored data to highlight the rev is deprecated
-        memcpy(cfg, 0x0, sizeof(uint16_t));
+        memset(cfg, 0x00, sizeof(received_rev));
 
         // Save it back
         is_ok = save_config(addr, cfg, size);
@@ -158,10 +158,15 @@ bool load_config(uint16_t addr, void * cfg, const void * default_cfg, size_t siz
     calculated_crc32 = software_crc32(buf, size);
     memcpy(&received_crc32, buf + size, sizeof(received_crc32));
 
-    if (calculated_crc32 != received_crc32) {
-        // if CRC mistmatch then we will apply the default configuration
-        printf("CRC32 mismatch at address %x, received: %08lX, calculated: %08lX\n", addr, received_crc32, calculated_crc32);
-
+    // We will validate if the rev (first 2 byte) is 0, AND CRC check matches. 
+    if ((received_rev != 0) || (calculated_crc32 != received_crc32)) {
+        if (received_rev != 0) {
+            printf("EEPROM is unlikely initialized, will populate with default configuration\n");
+        }
+        if (calculated_crc32 != received_crc32) {
+            printf("CRC32 mismatch at address %x, received: %08lX, calculated: %08lX\n", addr, received_crc32, calculated_crc32);
+        }
+        // Apply the default configuration
         free(buf);
         memcpy(cfg, default_cfg, size);
         return save_config(addr, cfg, size);

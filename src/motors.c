@@ -38,6 +38,7 @@ motor_config_t fine_trickler_motor_config;
 
 
 const eeprom_motor_data_t default_motor_data = {
+    .motor_data_rev = 0,
     // Motor 0 is coarse trickler
     .motor_data[0] = {
         .full_steps_per_rotation = 200,     // 200: 1.8 deg stepper, 400: 0.9 deg stepper

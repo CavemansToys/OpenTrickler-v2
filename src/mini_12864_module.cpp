@@ -46,6 +46,7 @@
 // Configs
 mini_12864_module_config_t mini_12864_module_config;
 const mini_12864_module_config_t default_mini_12864_module_config = {
+    .data_rev = 0,
     .inverted_encoder_direction = false,
     .display_rotation = DISPLAY_ROTATION_0,
 };

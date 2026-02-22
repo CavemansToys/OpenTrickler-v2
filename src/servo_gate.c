@@ -16,7 +16,7 @@ const uint16_t _pwm_full_scale_level = 65535;
 
 
 const eeprom_servo_gate_config_t default_eeprom_servo_gate_config = {
-    .servo_gate_config_rev = EEPROM_SERVO_GATE_CONFIG_REV,
+    .servo_gate_config_rev = 0,
     .servo_gate_enable = false,
     .shutter0_close_duty_cycle = 0.09f,
     .shutter0_open_duty_cycle = 0.05f,

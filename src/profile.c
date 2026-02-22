@@ -10,6 +10,7 @@ eeprom_profile_data_t profile_data;
 extern void swuart_calcCRC(uint8_t* datagram, uint8_t datagramLength);
 
 const eeprom_profile_data_t default_profile_data = {
+    .profile_data_rev = 0,
     .profiles[0] = {
         .compatibility = 0,
         .name = "AR2208,gr",
@@ -73,6 +74,22 @@ const eeprom_profile_data_t default_profile_data = {
         .fine_kd = 15.0f,
         .fine_min_flow_speed_rps = 0.08f,
         .fine_max_flow_speed_rps = 5.0f,
+    },
+    .profiles[4] = {
+        .compatibility = 0,
+        .name = "Profile4",
+    },
+    .profiles[5] = {
+        .compatibility = 0,
+        .name = "Profile5",
+    },
+    .profiles[6] = {
+        .compatibility = 0,
+        .name = "Profile6",
+    },
+    .profiles[7] = {
+        .compatibility = 0,
+        .name = "Profile7",
     },
 };
 

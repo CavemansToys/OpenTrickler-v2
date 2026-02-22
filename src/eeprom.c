@@ -103,6 +103,9 @@ bool eeprom_init(void) {
     snprintf(buf, sizeof(buf), "%08lX", rnd() & 0xffffffff);
     memcpy(default_eeprom_metadata.unique_id, buf, sizeof(default_eeprom_metadata.unique_id));
 
+    // Generate rev
+    default_eeprom_metadata.eeprom_metadata_rev = 0x0;
+
     // Load eeprom data
     memset(&metadata, 0x0, sizeof(metadata));
     is_ok = load_config(EEPROM_METADATA_BASE_ADDR, &metadata, &default_eeprom_metadata, sizeof(metadata), EEPROM_METADATA_REV);
