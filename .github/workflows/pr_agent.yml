@@ -1,6 +1,6 @@
 name: PR Agent (Gemini)
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, ready_for_review]
   issue_comment:
 jobs:
