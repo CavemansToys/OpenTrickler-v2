@@ -58,6 +58,48 @@ const profile_t default_ar_2209_profile = {
 };
 
 
+const profile_t default_8208xbr_profile = {
+    .rev = 0,
+    .compatibility = 0,
+
+    .name = "8208XBR,gr",
+
+    .coarse_kp = 0.05f,
+    .coarse_ki = 0.0f,
+    .coarse_kd = 0.3f,
+    .coarse_min_flow_speed_rps = 0.1f,
+    .coarse_max_flow_speed_rps = 5.0f,
+
+    .fine_kp = 2.0f,
+    .fine_ki = 0.0f,
+    .fine_kd = 12.0f,
+
+    .fine_min_flow_speed_rps = 0.06f,
+    .fine_max_flow_speed_rps = 5.0f,
+};
+
+
+const profile_t default_benchmark2_profile = {
+    .rev = 0,
+    .compatibility = 0,
+
+    .name = "Benchmark2,gr",
+
+    .coarse_kp = 0.06f,
+    .coarse_ki = 0.0f,
+    .coarse_kd = 0.3f,
+    .coarse_min_flow_speed_rps = 0.1f,
+    .coarse_max_flow_speed_rps = 5.0f,
+
+    .fine_kp = 0.8f,
+    .fine_ki = 0.0f,
+    .fine_kd = 15.0f,
+
+    .fine_min_flow_speed_rps = 0.08f,
+    .fine_max_flow_speed_rps = 5.0f,
+};
+
+
 
 
 bool profile_data_save() {
@@ -116,12 +158,14 @@ bool profile_data_init() {
         // Reset all profiles
         memset(profile_data.profiles, 0x0, sizeof(profile_data.profiles));
 
-        // Copy two default profiles
+        // Copy four default profiles (from original developer)
         memcpy(&profile_data.profiles[0], &default_ar_2208_profile, sizeof(profile_t));
         memcpy(&profile_data.profiles[1], &default_ar_2209_profile, sizeof(profile_t));
+        memcpy(&profile_data.profiles[2], &default_8208xbr_profile, sizeof(profile_t));
+        memcpy(&profile_data.profiles[3], &default_benchmark2_profile, sizeof(profile_t));
 
-        // Update default profile data
-        for (uint8_t idx=2; idx < MAX_PROFILE_CNT; idx+=1) {
+        // Update remaining profile slots with default names
+        for (uint8_t idx=4; idx < MAX_PROFILE_CNT; idx+=1) {
             profile_t * selected_profile = &profile_data.profiles[idx];
 
             // Provide default name

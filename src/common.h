@@ -35,6 +35,11 @@ bool string_to_boolean(char * s);
 
 int float_to_string(char * output_decimal_str, size_t buffer_size, float var, decimal_places_t decimal_places);
 
+/**
+ * Calculate CRC32 checksum using polynomial 0xEDB88320
+ */
+uint32_t software_crc32(const void *data, size_t length);
+
 #ifdef __cplusplus
 }
 #endif
